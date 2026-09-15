@@ -4,7 +4,7 @@
     "right_arm": {"pos": [0.20, 0.0, 0.0], "yaw": 1.5707963}
   },
   "table": {"half_size": [0.6, 0.45], "center": [0.0, 0.15]},
-  "table_rgb": {"low": [0.30, 0.20, 0.12], "high": [0.62, 0.48, 0.34]},
+  "table_rgb": {"base": [0.55, 0.38, 0.22], "brightness": [0.6, 1.15], "jitter": 0.03},
   "plate": {"pos": [0.0, 0.26], "radius": 0.07, "half_height": 0.006},
   "mat": {"pos": [0.29, 0.24], "half_size": [0.075, 0.095]},
   "zones": {

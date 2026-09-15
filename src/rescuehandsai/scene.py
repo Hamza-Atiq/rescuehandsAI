@@ -60,11 +60,17 @@ def sample_params(config: dict, seed: int) -> SceneParams:
         seed=seed, poses=poses, slots=slots, masses=masses, frictions=frictions,
         cup_radius=u(cup["radius"]), cup_half_height=u(cup["half_height"]),
         utensil_scale={item: u(ut["scale"]) for item in UTENSILS},
-        table_rgb=tuple(float(rng.uniform(lo, hi)) for lo, hi in
-                        zip(config["table_rgb"]["low"], config["table_rgb"]["high"])),
+        table_rgb=_wood_colour(config["table_rgb"], rng),
         light_diffuse=u(light["diffuse"]),
         light_offset=(u((-off, off)), u((-off, off))),
     )
+
+
+def _wood_colour(cfg: dict, rng) -> tuple:
+    """Brightness-scaled wood tone with a little hue jitter (never green like the zones)."""
+    t = float(rng.uniform(cfg["brightness"][0], cfg["brightness"][1]))
+    j = cfg["jitter"]
+    return tuple(float(min(1.0, max(0.0, c * t + rng.uniform(-j, j)))) for c in cfg["base"])
 
 
 def _v(values) -> str:
@@ -114,7 +120,7 @@ def world_xml(params: SceneParams, config: dict) -> str:
     cup_inertia = (params.masses["cup"] * (3 * r * r + 4 * hh * hh) / 12,) * 2 + (params.masses["cup"] * r * r / 2,)
     zones = "".join(
         f'<geom name="{name}" type="box" size="{_v(z["half_size"])} 0.0004" pos="{_v(z["pos"])} 0.0004" '
-        f'contype="0" conaffinity="0" rgba="0.25 0.75 0.35 0.55"/>'
+        f'contype="0" conaffinity="0" rgba="0.96 0.92 0.70 0.9"/>'
         for name, z in config["zones"].items())
     cameras = "".join(
         f'<camera name="{name}" pos="{_v(c["pos"])}" xyaxes="{_v(c["xyaxes"])}" fovy="{c["fovy"]}"/>'
@@ -122,6 +128,7 @@ def world_xml(params: SceneParams, config: dict) -> str:
     lx, ly = params.light_offset
     d = params.light_diffuse
     return f"""<mujoco model="rescuehands_dinner_table">
+  <compiler angle="radian"/>
   <option integrator="implicitfast" timestep="0.005" cone="elliptic" impratio="10" iterations="10" ls_iterations="20"/>
   <visual>
     <global offwidth="640" offheight="480"/>
