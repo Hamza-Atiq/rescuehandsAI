@@ -183,7 +183,7 @@ class ScriptedExpert:
         s = self.sim.scene_params.utensil_scale[item]
         hx, hy, hz = self.sim.scene_config["utensil"]["handle_half"]
         # body-frame x of the two grasp points on the handle
-        return {"end": -hx * s + 0.02, "neck": hx * s - 0.014, "half_width": hy, "half_height": hz}
+        return {"end": -hx * s + 0.02, "neck": hx * s - 0.026, "half_width": hy, "half_height": hz}
 
     def _pick_utensil(self):
         arm, grip, item = "right_arm", "right_arm/gripper", self.task.utensil
@@ -285,7 +285,17 @@ class ScriptedExpert:
         if chosen is None:
             raise PlanningError(f"{arm}: cannot place {item} at {np.round(goal, 3).tolist()}")
         q, q_up, site, finger, pitch = chosen
-        yield Move(q_up, 35, "utensil_carry")
+        yield Move(q_up, 50, "utensil_carry")
+        yield Move({}, 5, "utensil_hover")
+        # Second look: the utensil can turn in the hand while carrying. Re-measure and re-aim.
+        site_pos, site_mat = self.sim.site_pose(f"{arm}/gripperframe")
+        offset = site_mat.T @ (self.sim.data.body(item).xpos - site_pos)
+        self.ik.forward(arm, q)
+        mat = self.ik.data.site_xmat[self.ik.model.site(f"{arm}/gripperframe").id].reshape(3, 3)
+        q_fix = self.ik.solve(arm, goal - mat @ offset, pitch=pitch, approach_xy=approach, q_init=q,
+                              closing_sign=LEFT_SIGN)
+        if q_fix is not None:
+            q, site = q_fix, goal - mat @ offset
         yield Move(q, 18, "utensil_lower")
         yield Move({grip: OPEN}, 10, "utensil_release")
         q_back = self._retreat_pose(arm, site, finger, pitch, approach, q, LEFT_SIGN)
