@@ -16,7 +16,8 @@ def facts(time, held=None, supported=None, oob=(), cross=False):
                       supported={i: (supported or {}).get(i, True) for i in items},
                       in_zone={i: None for i in items}, height={i: 0.01 for i in items},
                       speed={i: 0.0 for i in items}, out_of_bounds=set(oob),
-                      cross_arm_contact=cross)
+                      cross_arm_contact=cross, up_z={i: 1.0 for i in items},
+                      angular_speed={i: 0.0 for i in items})
 
 
 class MonitorTests(unittest.TestCase):

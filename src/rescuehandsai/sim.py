@@ -119,7 +119,8 @@ class MujocoSimulation:
             dof = int(self.model.jnt_dofadr[joint.id])
             objects[item] = ObjectState(tuple(map(float, self.data.qpos[adr:adr + 3])),
                                         tuple(map(float, self.data.qpos[adr + 3:adr + 7])),
-                                        tuple(map(float, self.data.qvel[dof:dof + 3])))
+                                        tuple(map(float, self.data.qvel[dof:dof + 3])),
+                                        tuple(map(float, self.data.qvel[dof + 3:dof + 6])))
         return PrivilegedState(float(self.data.time), objects, contacts)
 
     def site_pose(self, name: str):

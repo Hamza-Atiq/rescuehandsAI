@@ -4,7 +4,7 @@ import unittest
 from rescuehandsai.contracts import BimanualAction
 from rescuehandsai.perturb import GripperGlitch
 from rescuehandsai.policies.scripted import ScriptedPolicy
-from rescuehandsai.runner import EpisodeRunner, clamp_action
+from rescuehandsai.runner import EpisodeLog, EpisodeRunner, clamp_action
 from rescuehandsai.sim import MujocoSimulation
 from rescuehandsai.task import make_task
 
@@ -41,6 +41,12 @@ class ClampTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             clamp_action(BimanualAction(0.0, {"a": float("nan"), "b": 0.0}), previous, limits, 0.1)
 
+    def test_missing_or_unexpected_joint_names_are_invalid(self):
+        previous, limits = {"a": 0.0, "b": 0.0}, {"a": (-1.0, 1.0), "b": (-1.0, 1.0)}
+        for targets in ({"a": 0.0}, {"a": 0.0, "b": 0.0, "nose": 0.0}):
+            with self.subTest(targets=sorted(targets)), self.assertRaisesRegex(ValueError, "INVALID_ACTION"):
+                clamp_action(BimanualAction(0.0, targets), previous, limits, 0.1)
+
 
 class RunnerTests(unittest.TestCase):
     @classmethod
@@ -65,6 +71,32 @@ class RunnerTests(unittest.TestCase):
         log = runner.run(make_task(0))
         self.assertIn("FAILED_GRASP", [e["label"] for e in log.events])
         self.assertEqual((log.state, log.failure, log.recoveries), ("FAILED", "TIMEOUT", 0))
+
+    def test_recovery_motion_respects_the_step_budget(self):
+        log = EpisodeRunner(self.sim, IdlePolicy(), supervisor=True, stall_seconds=0.05, max_steps=5).run(make_task(0))
+        self.assertLessEqual(log.steps, 5)
+        self.assertEqual((log.state, log.failure), ("FAILED", "TIMEOUT"))
+
+    def test_task_limits_are_used_by_default(self):
+        from dataclasses import replace
+        task = replace(make_task(0), max_recoveries=0, timeout_s=3.0)
+        log = EpisodeRunner(self.sim, IdlePolicy(), supervisor=True, stall_seconds=0.5).run(task)
+        self.assertEqual((log.max_steps, log.max_recoveries, log.recoveries), (60, 0, 0))
+        self.assertEqual(log.failure, "RECOVERY_EXHAUSTED")
+        self.assertLessEqual(log.steps, 60)
+
+    def test_fault_clock_runs_during_recovery_motion(self):
+        glitch = GripperGlitch()
+        glitch.reset(1)
+        glitch.fired, glitch.arm, glitch._left = True, "right_arm", 7
+        self.sim.reset(1)
+        self.sim.set_actuator_fault("right_arm/gripper", glitch.open_value)
+        runner = EpisodeRunner(self.sim, IdlePolicy(), supervisor=True, fault=glitch)
+        log = EpisodeLog(1, {}, "", True, "GripperGlitch", max_steps=1000)
+        runner._safe_pose(log, make_task(1))
+        self.assertGreater(log.steps, 7)
+        self.assertEqual(glitch._left, 0)
+        self.assertIsNone(log.fault_step)  # recovery cannot start a new fault
 
     def test_supervisor_recovers_from_gripper_glitch(self):
         task = make_task(1)

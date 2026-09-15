@@ -24,6 +24,7 @@ class ObjectState:
     position: tuple[float, float, float]
     quaternion: tuple[float, float, float, float]
     linear_velocity: tuple[float, float, float]
+    angular_velocity: tuple[float, float, float]  # body frame (MuJoCo free joint)
 
 
 @dataclass(frozen=True)

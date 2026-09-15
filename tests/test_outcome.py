@@ -2,7 +2,7 @@
 import unittest
 
 from rescuehandsai.auditor import AuditFacts
-from rescuehandsai.evaluation import task_outcome
+from rescuehandsai.evaluation import HandoffTracker, task_outcome
 from rescuehandsai.scene import load_config, sample_params
 from rescuehandsai.task import make_task
 
@@ -18,7 +18,8 @@ def good_facts(params, task, **changes):
                 supported={i: True for i in ITEMS},
                 in_zone={"cup": "cup_zone", task.utensil: "utensil_zone", other: None},
                 height={i: positions[i][2] for i in ITEMS}, speed={i: 0.0 for i in ITEMS},
-                out_of_bounds=set(), cross_arm_contact=False, positions=positions)
+                out_of_bounds=set(), cross_arm_contact=False, positions=positions,
+                up_z={i: 1.0 for i in ITEMS}, angular_speed={i: 0.0 for i in ITEMS})
     for key, value in changes.items():
         if isinstance(value, dict) and isinstance(base.get(key), dict):
             base[key] = base[key] | value
@@ -32,10 +33,10 @@ class OutcomeTests(unittest.TestCase):
         self.task = make_task(1)
         self.params = sample_params(load_config(), 1)
         self.other = "spoon" if self.task.utensil == "fork" else "fork"
-        self.holders = {"left_arm", "right_arm"}
+        self.handoff = True
 
     def outcome(self, **changes):
-        return task_outcome(good_facts(self.params, self.task, **changes), self.task, self.holders, self.params)
+        return task_outcome(good_facts(self.params, self.task, **changes), self.task, self.handoff, self.params)
 
     def test_good_final_state_succeeds(self):
         self.assertTrue(self.outcome()["success"])
@@ -54,9 +55,50 @@ class OutcomeTests(unittest.TestCase):
     def test_tipped_cup_fails(self):
         self.assertFalse(self.outcome(height={"cup": self.params.cup_radius})["success"])
 
-    def test_no_handoff_fails(self):
-        result = task_outcome(good_facts(self.params, self.task), self.task, {"right_arm"}, self.params)
+    def test_upside_down_cup_at_the_right_height_fails(self):
+        result = self.outcome(up_z={"cup": -1.0})
+        self.assertFalse(result["cup_upright"])
         self.assertFalse(result["success"])
+
+    def test_spinning_item_is_not_settled(self):
+        for item in ("cup", self.task.utensil):
+            with self.subTest(item=item):
+                self.assertFalse(self.outcome(angular_speed={item: 2.0})["settled"])
+
+    def test_no_handoff_fails(self):
+        result = task_outcome(good_facts(self.params, self.task), self.task, False, self.params)
+        self.assertFalse(result["success"])
+        with self.assertRaises(TypeError):  # the old "set of holders" call must not pass silently
+            task_outcome(good_facts(self.params, self.task), self.task, {"left_arm", "right_arm"}, self.params)
+
+
+class HandoffTrackerTests(unittest.TestCase):
+    def step(self, tracker, held, supported):
+        facts = good_facts(sample_params(load_config(), 1), make_task(1, utensil="fork"),
+                           held_by={"fork": set(held)}, supported={"fork": supported})
+        return tracker.update(facts)
+
+    def test_in_air_transfer_counts(self):
+        t = HandoffTracker("fork")
+        self.step(t, {"right_arm"}, True)       # picked from the tray
+        self.step(t, {"right_arm"}, False)      # lifted
+        self.step(t, {"left_arm", "right_arm"}, False)
+        self.step(t, set(), False)              # contact flicker in the air
+        self.assertTrue(self.step(t, {"left_arm"}, False))
+        self.assertTrue(self.step(t, set(), True))  # placed afterwards: stays done
+
+    def test_drop_then_other_hand_pickup_is_not_a_handoff(self):
+        t = HandoffTracker("fork")
+        self.step(t, {"right_arm"}, False)
+        self.step(t, set(), True)               # dropped on the table
+        self.step(t, {"left_arm"}, True)
+        self.assertFalse(self.step(t, {"left_arm"}, False))
+
+    def test_both_touching_on_the_table_is_not_shared_in_air(self):
+        t = HandoffTracker("fork")
+        self.step(t, {"right_arm"}, True)
+        self.step(t, {"left_arm", "right_arm"}, True)
+        self.assertFalse(self.step(t, {"left_arm"}, False))
 
 
 if __name__ == "__main__":

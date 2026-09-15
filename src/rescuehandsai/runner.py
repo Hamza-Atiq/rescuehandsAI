@@ -11,7 +11,7 @@ import time
 
 from .auditor import FailureEvent, FailureMonitor, compute_facts
 from .contracts import BimanualAction
-from .evaluation import task_outcome
+from .evaluation import HandoffTracker, task_outcome
 from .motion import MotionFollower, Move
 
 STATES = ("IDLE", "EXECUTING", "RECOVERING", "SUCCEEDED", "FAILED", "ABORTED")
@@ -21,8 +21,19 @@ RECOVERABLE = {"OBJECT_DROPPED", "FAILED_GRASP", "TARGET_MISSED"}
 TERMINAL = {"COLLISION", "OBJECT_OUT_OF_BOUNDS", "SIMULATION_ERROR", "INVALID_ACTION", "POLICY_ERROR"}
 
 
+class EpisodeBudgetExceeded(Exception):
+    """The episode's step budget ran out (also during recovery motion)."""
+
+
 def clamp_action(action: BimanualAction, previous: dict, limits: dict, max_delta: float):
-    """Return (safe action, number of joints that had to be clamped)."""
+    """Return (safe action, number of joints that had to be clamped).
+
+    The command must name exactly the robot's joints: a missing or unexpected name
+    is an INVALID_ACTION, never silently dropped or filled in.
+    """
+    names, expected = set(action.targets), set(limits)
+    if names != expected:
+        raise ValueError(f"INVALID_ACTION: missing {sorted(expected - names)}, unexpected {sorted(names - expected)}")
     safe, clamped = {}, 0
     step = max_delta * 0.98
     for name, (low, high) in limits.items():
@@ -51,6 +62,8 @@ class EpisodeLog:
     inference_calls: int = 0
     inference_seconds: list = field(default_factory=list)
     fault_step: int | None = None
+    max_steps: int = 0
+    max_recoveries: int = 0
     outcome: dict = field(default_factory=dict)
     failure: str | None = None
     sim_seconds: float = 0.0
@@ -58,9 +71,11 @@ class EpisodeLog:
 
 
 class EpisodeRunner:
-    def __init__(self, sim, policy, *, supervisor: bool, fault=None, max_steps: int = 1200,
-                 max_recoveries: int = 2, settle_steps: int = 10, stall_seconds: float = 15.0,
+    def __init__(self, sim, policy, *, supervisor: bool, fault=None, max_steps: int | None = None,
+                 max_recoveries: int | None = None, settle_steps: int = 10, stall_seconds: float = 15.0,
                  on_frame=None):
+        """max_steps / max_recoveries default to the task's timeout_s / max_recoveries;
+        explicit values are evaluation overrides and are recorded in the episode log."""
         self.sim, self.policy, self.supervisor = sim, policy, supervisor
         self.stall_seconds = stall_seconds
         self.fault, self.max_steps, self.max_recoveries = fault, max_steps, max_recoveries
@@ -68,10 +83,10 @@ class EpisodeRunner:
 
     # -- progress from physics (never from the policy's claims) -----------------
     @staticmethod
-    def _progress(facts, task, holders, progress):
+    def _progress(facts, task, holders, handoff, progress):
         u = task.utensil
         progress["pick_utensil"] |= "right_arm" in holders
-        progress["handoff"] |= holders == {"left_arm", "right_arm"}
+        progress["handoff"] |= handoff.update(facts)
         placed = facts.in_zone[u] == "utensil_zone" and not facts.touching[u]
         progress["place_utensil"] = progress["handoff"] and placed
         progress["place_cup"] = facts.in_zone["cup"] == "cup_zone" and not facts.touching["cup"]
@@ -87,8 +102,22 @@ class EpisodeRunner:
                 expect[item] = sorted(facts.held_by[item])[0] if facts.held_by[item] else holder
         return expect
 
-    def _safe_pose(self, log):
-        """Open both hands, then return both arms to the start pose."""
+    def _step(self, action, log, facts, task, state):
+        """The only place the episode advances physics: fault clock, budget, frame hook."""
+        if log.steps >= log.max_steps:
+            raise EpisodeBudgetExceeded
+        if self.fault is not None and self.fault.before_step(self.sim, facts, task, log.steps):
+            log.fault_step = log.steps
+        self.sim.step(action)
+        log.steps += 1
+        if self.on_frame:
+            self.on_frame(self.sim, state)
+
+    def _safe_pose(self, log, task):
+        """Open both hands, then return both arms to the start pose.
+
+        The fault clock keeps running (a half-second glitch lasts half a second in
+        every configuration) but a new fault cannot start: facts are withheld."""
         follower = MotionFollower(self.sim.previous, self.sim.config["max_command_delta"])
         opened = {n: 0.9 for n in self.sim.names if n.endswith("gripper")}
         for move in (Move(opened, 8, "open"), Move(self.sim.home_targets, 30, "home")):
@@ -96,10 +125,8 @@ class EpisodeRunner:
             done = False
             while not done:
                 done = follower.advance(move)
-                self.sim.step(BimanualAction(self.sim.observe().timestamp, dict(follower.targets)))
-                log.steps += 1
-                if self.on_frame:
-                    self.on_frame(self.sim, "RECOVERING")
+                action = BimanualAction(self.sim.observe().timestamp, dict(follower.targets))
+                self._step(action, log, None, task, "RECOVERING")
 
     # -- episode -------------------------------------------------------------------
     def run(self, task) -> EpisodeLog:
@@ -110,22 +137,23 @@ class EpisodeRunner:
             self.fault.reset(task.seed)
         log = EpisodeLog(task.seed, policy.metadata(), task.instruction, self.supervisor,
                          type(self.fault).__name__ if self.fault else None, state="EXECUTING")
+        log.max_steps = (self.max_steps if self.max_steps is not None
+                         else round(task.timeout_s / sim.config["control_dt"]))
+        log.max_recoveries = self.max_recoveries if self.max_recoveries is not None else task.max_recoveries
         monitor = FailureMonitor(debounce=3)
         self._last_holder = {}
-        holders = set()
+        holders, handoff = set(), HandoffTracker(task.utensil)
         progress = dict.fromkeys(("pick_utensil", "handoff", "place_utensil", "place_cup"), False)
         stall_limit = max(1, round(self.stall_seconds / sim.config["control_dt"]))
         stall, fingerprint = 0, None
         facts, stable, done_steps, started = compute_facts(sim), 0, 0, time.perf_counter()
         max_delta = sim.config["max_command_delta"]
         while log.state in ("EXECUTING", "RECOVERING"):
-            if log.steps >= self.max_steps:
+            if log.steps >= log.max_steps:
                 log.events.append({"label": "TIMEOUT", "time": facts.time})
                 log.state, log.failure = "FAILED", "TIMEOUT"
                 break
             try:
-                if self.fault is not None and self.fault.before_step(sim, facts, task, log.steps):
-                    log.fault_step = log.steps
                 obs = sim.observe(images=policy.wants_images())
                 t0 = time.perf_counter()
                 raw = policy.act(obs)
@@ -134,7 +162,7 @@ class EpisodeRunner:
                     log.inference_seconds.append(time.perf_counter() - t0)
                 action, clamped = clamp_action(raw, sim.previous, sim.limits, max_delta)
                 log.clamped_joint_steps += clamped
-                sim.step(action)
+                self._step(action, log, facts, task, log.state)
             except ValueError as exc:
                 log.events.append({"label": "INVALID_ACTION", "time": facts.time, "detail": str(exc)})
                 log.state, log.failure = "FAILED", "INVALID_ACTION"
@@ -145,13 +173,10 @@ class EpisodeRunner:
                 log.events.append({"label": label, "time": facts.time, "detail": str(exc)})
                 log.state, log.failure = "FAILED", label
                 break
-            log.steps += 1
-            if self.on_frame:
-                self.on_frame(sim, log.state)
             facts = compute_facts(sim)
             for item in (task.utensil,):
                 holders |= facts.held_by[item]
-            progress = self._progress(facts, task, holders, progress)
+            progress = self._progress(facts, task, holders, handoff, progress)
             events = monitor.update(facts, self._expected_holds(facts, task))
             # Progress watchdog: catches a grasp that never starts or a step that stalls,
             # which hold-based checks cannot see (nothing was held yet).
@@ -176,7 +201,7 @@ class EpisodeRunner:
                 break
             recoverable = [e for e in events if e.label in RECOVERABLE]
             if recoverable and self.supervisor:
-                if log.recoveries >= self.max_recoveries:
+                if log.recoveries >= log.max_recoveries:
                     log.events.append({"label": "RECOVERY_EXHAUSTED", "time": facts.time})
                     log.state, log.failure = "FAILED", "RECOVERY_EXHAUSTED"
                     break
@@ -188,20 +213,25 @@ class EpisodeRunner:
                         self._last_holder.pop(e.item, None)
                     if e.item == task.utensil:
                         holders.clear()
+                        handoff.reset()
                         progress["pick_utensil"] = progress["handoff"] = False
                 try:
-                    self._safe_pose(log)
+                    self._safe_pose(log, task)
+                except EpisodeBudgetExceeded:
+                    log.events.append({"label": "TIMEOUT", "time": float(sim.data.time)})
+                    log.state, log.failure = "FAILED", "TIMEOUT"
+                    break
                 except (ValueError, RuntimeError) as exc:
-                    log.events.append({"label": "COLLISION" if "COLLISION" in str(exc) else "SIMULATION_ERROR",
-                                       "time": facts.time, "detail": str(exc)})
-                    log.state, log.failure = "FAILED", "COLLISION"
+                    label = "COLLISION" if "COLLISION" in str(exc) else "SIMULATION_ERROR"
+                    log.events.append({"label": label, "time": facts.time, "detail": str(exc)})
+                    log.state, log.failure = "FAILED", label
                     break
                 facts = compute_facts(sim)
                 policy.after_recovery(sim, task, progress)
-                done_steps, stall, fingerprint = 0, 0, None
+                done_steps, stall, fingerprint, stable = 0, 0, None, 0
                 log.state = "EXECUTING"
                 continue
-            outcome = task_outcome(facts, task, holders, sim.scene_params)
+            outcome = task_outcome(facts, task, handoff.done, sim.scene_params)
             stable = stable + 1 if outcome["success"] else 0
             if stable >= self.settle_steps:
                 log.state = "SUCCEEDED"
@@ -213,7 +243,7 @@ class EpisodeRunner:
                     log.state, log.failure = "FAILED", "TARGET_MISSED"
         sim.set_actuator_fault("right_arm/gripper", None)
         sim.set_actuator_fault("left_arm/gripper", None)
-        log.outcome = task_outcome(compute_facts(sim), task, holders, sim.scene_params)
+        log.outcome = task_outcome(compute_facts(sim), task, handoff.done, sim.scene_params)
         log.sim_seconds = float(sim.data.time)
         log.wall_seconds = round(time.perf_counter() - started, 2)
         return log

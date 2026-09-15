@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 from rescuehandsai.auditor import compute_facts
-from rescuehandsai.evaluation import task_outcome
+from rescuehandsai.evaluation import HandoffTracker, task_outcome
 from rescuehandsai.expert import ScriptedExpert
 from rescuehandsai.recorder import EpisodeRecorder
 from rescuehandsai.sim import MujocoSimulation
@@ -51,18 +51,18 @@ def main():
             sim.reset(seed, instruction=task.instruction)
             expert = ScriptedExpert(sim, task)
             started = time.time()
-            holders, steps, error = set(), 0, None
+            handoff, steps, error = HandoffTracker(task.utensil), 0, None
             try:
                 while not expert.done and steps < MAX_STEPS:
                     obs = sim.observe(images=True)
                     action = expert.act(obs)
                     recorder.add(obs, action)
                     sim.step(action)
-                    holders |= compute_facts(sim).held_by[task.utensil]
+                    handoff.update(compute_facts(sim))
                     steps += 1
             except Exception as exc:  # planning or safety stop: not a demonstration
                 error = f"{type(exc).__name__}: {exc}"
-            outcome = task_outcome(compute_facts(sim), task, holders, sim.scene_params) if error is None else {"success": False}
+            outcome = task_outcome(compute_facts(sim), task, handoff.done, sim.scene_params) if error is None else {"success": False}
             keep = error is None and expert.done and outcome["success"]
             if keep:
                 recorder.save()

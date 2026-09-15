@@ -29,7 +29,7 @@ class TaskSpec:
     utensil: str
     seed: int
     max_recoveries: int = 2
-    timeout_s: float = 60.0
+    timeout_s: float = 75.0
 
 
 def make_task(seed: int, utensil: str | None = None, template: int | None = None) -> TaskSpec:
