@@ -5,14 +5,21 @@ still apply. Where this file is more specific, it records the decisions made.
 
 ## Facts that shape the design
 
-- Submission deadline: **2026-09-16 23:30 Pakistan Standard Time** (lablab.ai
-  event schedule). About 37 hours from approval.
 - Submission also needs: public GitHub repo (MIT), video, slides, cover image.
 - Development laptop: Intel Core i5-6300U, 4 threads, no discrete GPU.
-- No Core Ultra machine is available. The owner will ask organizers on Discord
-  and try Intel Tiber AI Cloud. Benchmarks record the real CPU name. No Core
-  Ultra claim without a Core Ultra measurement.
-- No AMD credits. Training runs on a free Kaggle GPU.
+- No Core Ultra machine is available. An organizer Discord reply (relayed by
+  the owner) says development/training may happen elsewhere, but the VLA/VLM
+  policy **must execute on Intel XPUs**, and a non-Core-Ultra Intel CPU + iGPU
+  was accepted as an alternative configuration. Plan: deploy and benchmark on
+  this i5-6300U CPU and its Intel HD Graphics 520 iGPU (if the OpenVINO GPU
+  plugin works). Benchmarks record the real device names. No Core Ultra claim.
+- Organizer: inverse kinematics is not preferable if it dominates robot control.
+  IK is used only by the scripted teacher to generate demonstrations; at
+  deployment SmolVLA outputs joint targets directly. The README must say so.
+- Organizer: combining a simpler VLA with a more complex VLM is welcome.
+  Optional layer after the core pipeline works: an OpenVINO-run VLM reads the
+  overhead image and instruction and selects the next subtask text for SmolVLA.
+- Training runs on a free Kaggle GPU.
 - Model decision (owner): **SmolVLA only.** No hidden switch to another model.
 
 ## Scene
