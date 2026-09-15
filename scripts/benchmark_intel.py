@@ -11,6 +11,7 @@ call, mean/p95 latency, process memory and the action difference from the
 FP32 CPU reference, so speed-ups are never reported without their accuracy cost.
 """
 import argparse
+import hashlib
 from datetime import datetime, timezone
 import json
 import platform
@@ -37,21 +38,36 @@ def real_inputs(image_keys, joint_count_expected):
     obs = sim.observe(images=True)
     sim.close()
     state = np.array([[obs.positions[n] for n in sim.names]], dtype=np.float32)
-    if joint_count_expected is not None and state.shape[1] != joint_count_expected:
-        state = state[:, :joint_count_expected]  # pretrained base model: 6-D (spike only)
-    inputs = {"state": state, "task": [obs.instruction]}
+    truncated = joint_count_expected is not None and state.shape[1] != joint_count_expected
+    if truncated:
+        state = state[:, :joint_count_expected]  # pretrained base model: 6-D (spike only), recorded
+    inputs = {"state": state, "task": [obs.instruction], "_truncated": bool(truncated)}
     for camera, key in image_keys.items():
         inputs[key] = to_chw_float(obs.images[camera])
     return inputs
 
 
+INT8_MODE = "INT8_ASYM"
+
+
+def model_digest(export_dir: Path) -> str:
+    """SHA-256 of the exported graph and weights, so derived models are tied to their source."""
+    h = hashlib.sha256()
+    for name in ("smolvla.xml", "smolvla.bin"):
+        with open(export_dir / name, "rb") as fh:
+            for block in iter(lambda: fh.read(1 << 22), b""):
+                h.update(block)
+    return h.hexdigest()
+
+
 def make_int8(fp32_dir: Path, int8_dir: Path):
+    """Compress once per (source model, mode); int8_dir is named after both."""
     import nncf
     if (int8_dir / "smolvla.xml").is_file():
         return
     int8_dir.mkdir(parents=True, exist_ok=True)
     model = ov.Core().read_model(fp32_dir / "smolvla.xml")
-    compressed = nncf.compress_weights(model, mode=nncf.CompressWeightsMode.INT8_ASYM)
+    compressed = nncf.compress_weights(model, mode=getattr(nncf.CompressWeightsMode, INT8_MODE))
     ov.save_model(compressed, int8_dir / "smolvla.xml")
     for name in ("manifest.json", "tokenizer.xml", "tokenizer.bin"):
         if (fp32_dir / name).exists():
@@ -107,9 +123,12 @@ def main():
                 break
     state_dims = next((f["shape"][0] for f in features if f["name"] == "state"), None)
     inputs = real_inputs(image_keys, state_dims)
+    truncated = inputs.pop("_truncated")
+    source_sha256 = model_digest(args.export)
 
     wanted = args.variants.split(",")
-    int8_dir = out.parent / "openvino_int8" if "int8" in args.variants else None
+    int8_dir = (out.parent / f"openvino_int8_{INT8_MODE.lower()}_{source_sha256[:16]}"
+                if "int8" in args.variants else None)
     if int8_dir:
         t = time.perf_counter()
         make_int8(args.export, int8_dir)
@@ -162,7 +181,10 @@ def main():
             rows.insert(0, {"variant": "cpu_pytorch", "error": f"{type(exc).__name__}: {exc}"[:500]})
 
     report = {
-        "created_utc": stamp, "export": str(args.export), "openvino": ov.__version__,
+        "created_utc": stamp, "export": str(args.export), "export_sha256": source_sha256,
+        "int8_dir": str(int8_dir) if int8_dir else None, "int8_mode": INT8_MODE if int8_dir else None,
+        "state_dims_model": state_dims, "state_truncated_for_model": truncated,
+        "openvino": ov.__version__,
         "devices": {d: core.get_property(d, "FULL_DEVICE_NAME") for d in core.available_devices},
         "cpu": platform.processor(), "platform": platform.platform(),
         "observation": "dinner scene seed 0, three 256x256 cameras, real joint state and instruction",

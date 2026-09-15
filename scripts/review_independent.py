@@ -77,7 +77,7 @@ def main():
         facts = compute_facts(sim)
         report["upside_down_cup"] = {
             "cup_local_up_dot_world_up": float(sim.data.body("cup").xmat.reshape(3, 3)[2, 2]),
-            "outcome": task_outcome(facts, task, {"left_arm", "right_arm"}, sim.scene_params),
+            "outcome": task_outcome(facts, task, True, sim.scene_params),
             "scope": "real MuJoCo fixture; historical holders supplied to evaluator"}
         sim.reset(1)
         raw = BimanualAction(0, dict(sim.previous) | {"unexpected_joint": 0})

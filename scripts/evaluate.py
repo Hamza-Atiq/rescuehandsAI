@@ -86,7 +86,8 @@ def main():
     parser.add_argument("--seeds", type=seed_range, default=range(0, 10))
     parser.add_argument("--supervisor", choices=["on", "off"], required=True)
     parser.add_argument("--fault", choices=["none", "glitch"], default="none")
-    parser.add_argument("--max-steps", type=int, default=1500)
+    parser.add_argument("--max-steps", type=int, default=None,
+                        help="override the task timeout (default: task.timeout_s / control_dt)")
     parser.add_argument("--video", action="store_true")
     parser.add_argument("--name", help="run folder name under results/")
     args = parser.parse_args()
@@ -127,7 +128,7 @@ def main():
     summary = {
         "run": name, "created_utc": stamp, "git_revision": git_revision(),
         "policy": episodes[0]["policy"] if episodes else None, "supervisor": args.supervisor == "on",
-        "fault": args.fault, "seeds": list(args.seeds), "episodes": n,
+        "fault": args.fault, "seeds": list(args.seeds), "episodes": n, "max_steps_override": args.max_steps,
         "success_rate": len(successes) / n if n else None, "successes": len(successes),
         "failures": failures,
         "collision_episodes": sum(any(ev["label"] == "COLLISION" for ev in e["events"]) for e in episodes),

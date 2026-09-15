@@ -25,6 +25,8 @@ class AuditFacts:
     out_of_bounds: set
     cross_arm_contact: bool
     positions: dict = None  # item -> (x, y, z)
+    up_z: dict = None       # item -> world z of the body's up axis (1 upright, -1 upside down)
+    angular_speed: dict = None  # item -> rad/s
 
 
 @dataclass(frozen=True)
@@ -73,13 +75,16 @@ def compute_facts(sim) -> AuditFacts:
     zones = sim.scene_config["zones"]
     thx, thy = sim.scene_config["table"]["half_size"]
     tcx, tcy = sim.scene_config["table"]["center"]
-    in_zone, height, speed, oob, positions = {}, {}, {}, set(), {}
+    in_zone, height, speed, oob, positions, up_z, spin = {}, {}, {}, set(), {}, {}, {}
     state = sim.privileged().objects
     for item in SCENE_ITEMS:
         x, y, z = state[item].position
         positions[item] = (x, y, z)
         height[item] = z
         speed[item] = math.sqrt(sum(v * v for v in state[item].linear_velocity))
+        _, qx, qy, _ = state[item].quaternion  # MuJoCo order w, x, y, z
+        up_z[item] = 1.0 - 2.0 * (qx * qx + qy * qy)
+        spin[item] = math.sqrt(sum(w * w for w in state[item].angular_velocity))
         in_zone[item] = next((name for name, zone in zones.items()
                               if abs(x - zone["pos"][0]) <= zone["half_size"][0]
                               and abs(y - zone["pos"][1]) <= zone["half_size"][1]
@@ -91,7 +96,7 @@ def compute_facts(sim) -> AuditFacts:
         held_by={i: touch_fixed[i] & touch_moving[i] for i in SCENE_ITEMS},
         touching={i: touch_fixed[i] | touch_moving[i] for i in SCENE_ITEMS},
         supported=supported, in_zone=in_zone, height=height, speed=speed,
-        out_of_bounds=oob, cross_arm_contact=cross, positions=positions)
+        out_of_bounds=oob, cross_arm_contact=cross, positions=positions, up_z=up_z, angular_speed=spin)
 
 
 class FailureMonitor:
