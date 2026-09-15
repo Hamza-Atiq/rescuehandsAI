@@ -1,0 +1,61 @@
+{
+  "seed": 9,
+  "policy": {
+    "name": "scripted_teacher",
+    "backend": "python",
+    "device": "cpu",
+    "checkpoint": null,
+    "privileged_state": true,
+    "note": "IK teacher; baseline and demonstration source only"
+  },
+  "instruction": "Pick up the fork and hand it to the left hand. Then move the cup to its spot by the plate.",
+  "supervisor": true,
+  "fault": null,
+  "state": "FAILED",
+  "steps": 386,
+  "events": [
+    {
+      "label": "OBJECT_DROPPED",
+      "time": 5.799999999999899,
+      "item": "fork",
+      "arm": "right_arm"
+    },
+    {
+      "label": "OBJECT_DROPPED",
+      "time": 13.400000000000695,
+      "item": "fork",
+      "arm": "right_arm"
+    },
+    {
+      "label": "OBJECT_DROPPED",
+      "time": 19.300000000000445,
+      "item": "fork",
+      "arm": "right_arm"
+    },
+    {
+      "label": "RECOVERY_EXHAUSTED",
+      "time": 19.300000000000445
+    }
+  ],
+  "recoveries": 2,
+  "clamped_joint_steps": 0,
+  "inference_calls": 0,
+  "inference_seconds": [],
+  "fault_step": null,
+  "max_steps": 1500,
+  "max_recoveries": 2,
+  "outcome": {
+    "success": false,
+    "cup_in_zone": false,
+    "utensil_in_zone": false,
+    "handoff": false,
+    "released": true,
+    "supported": true,
+    "cup_upright": true,
+    "settled": false,
+    "spare_utensil_in_place": true
+  },
+  "failure": "RECOVERY_EXHAUSTED",
+  "sim_seconds": 19.300000000000445,
+  "wall_seconds": 7.86
+}
