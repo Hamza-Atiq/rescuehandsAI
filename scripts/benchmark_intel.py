@@ -65,13 +65,14 @@ def time_model(label, factory, inputs, runs):
     t = time.perf_counter()
     model = factory()
     load_s = time.perf_counter() - t
+    predict = getattr(model, "predict_action_chunk", model)  # InferenceModel returns the action chunk
     t = time.perf_counter()
-    first = np.asarray(model(inputs))
+    first = np.asarray(predict(inputs))
     first_s = time.perf_counter() - t
     times = []
     for _ in range(runs):
         t = time.perf_counter()
-        out = np.asarray(model(inputs))
+        out = np.asarray(predict(inputs))
         times.append(time.perf_counter() - t)
     row = {"variant": label, "load_s": round(load_s, 2), "first_call_s": round(first_s, 2),
            "mean_s": round(float(np.mean(times)), 3), "p95_s": round(float(np.percentile(times, 95)), 3),
