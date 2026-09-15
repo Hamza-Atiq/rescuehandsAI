@@ -67,7 +67,7 @@ for 0.5 s after the utensil is lifted (a real physical drop).
 | --- | --- | --- | ---: | --- |
 | Scripted teacher (baseline) | on | none | 8/10 | 2 failures: one planning error, one recovery budget exhausted |
 | Scripted teacher (baseline) | off | gripper glitch | 0/10 | every drop breaks the task |
-| Scripted teacher (baseline) | on | gripper glitch | pending | |
+| Scripted teacher (baseline) | on | gripper glitch | 6/10 | recovered 6 of 10 drops; 2 recovery budgets exhausted, 1 missed target, 1 planning error |
 | SmolVLA (OpenVINO, iGPU) | off | none | pending | |
 | SmolVLA (OpenVINO, iGPU) | on | gripper glitch | pending | |
 
