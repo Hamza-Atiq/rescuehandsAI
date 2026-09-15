@@ -13,6 +13,11 @@ DOWN = np.array([0.0, 0.0, -1.0])
 FIXED_JAW_OFFSET = 0.020
 
 
+def _cross(a, b):
+    # np.cross is slow for single 3-vectors; this runs thousands of times per plan
+    return np.array([a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]])
+
+
 def hand_axes(site_xmat: np.ndarray):
     """Return (finger direction, jaw closing axis) of a gripperframe site."""
     return site_xmat[:, 0].copy(), site_xmat[:, 2].copy()
@@ -89,6 +94,8 @@ class IKSolver:
         starts += [self._rng.uniform(info["low"], info["high"]) for _ in range(4)]
         jacp = np.zeros((3, self.model.nv))
         jacr = np.zeros((3, self.model.nv))
+        J = np.zeros((6, 5))
+        eye = self.damping ** 2 * np.eye(6)
         best, best_err = None, np.inf
         for q in starts:
             q = np.clip(q, info["low"], info["high"])
@@ -97,13 +104,14 @@ class IKSolver:
                 finger, closing = hand_axes(mat)
                 sign = 1.0 if np.dot(closing, c) >= 0 else -1.0
                 e_pos = target - pos
-                e_rot = np.cross(finger, want_finger) + np.cross(closing, sign * c)
-                if np.linalg.norm(e_pos) < tol * 0.3 and np.linalg.norm(e_rot) < 0.01:
+                e_rot = _cross(finger, want_finger) + _cross(closing, sign * c)
+                if e_pos @ e_pos < (tol * 0.3) ** 2 and e_rot @ e_rot < 1e-4:
                     break
                 mujoco.mj_jacSite(self.model, self.data, jacp, jacr, info["site"])
-                J = np.vstack([jacp[:, info["dof"]], self.rot_weight * jacr[:, info["dof"]]])
+                J[:3] = jacp[:, info["dof"]]
+                J[3:] = self.rot_weight * jacr[:, info["dof"]]
                 e = np.concatenate([e_pos, self.rot_weight * e_rot])
-                dq = J.T @ np.linalg.solve(J @ J.T + self.damping ** 2 * np.eye(6), e)
+                dq = J.T @ np.linalg.solve(J @ J.T + eye, e)
                 norm = np.linalg.norm(dq)
                 if norm > 0.25:
                     dq *= 0.25 / norm
