@@ -32,8 +32,11 @@ class IKSolver:
                 "names": [f"{arm}/{j}" for j in ARM_JOINTS],
                 "qpos": np.array([model.jnt_qposadr[j.id] for j in joints]),
                 "dof": np.array([model.jnt_dofadr[j.id] for j in joints]),
-                "low": np.array([model.jnt_range[j.id][0] for j in joints]),
-                "high": np.array([model.jnt_range[j.id][1] for j in joints]),
+                # Same limits as the simulator: joint range intersected with motor range.
+                "low": np.array([max(model.jnt_range[j.id][0], model.actuator(j.name).ctrlrange[0])
+                                 for j in joints]),
+                "high": np.array([min(model.jnt_range[j.id][1], model.actuator(j.name).ctrlrange[1])
+                                  for j in joints]),
                 "site": model.site(f"{arm}/gripperframe").id,
             }
 
