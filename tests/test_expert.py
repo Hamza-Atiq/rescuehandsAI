@@ -55,3 +55,40 @@ class ExpertCupTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ExpertFullTaskTests(unittest.TestCase):
+    """Hand-off task end to end. Seeds 0-2 cover both fork and spoon."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.sim = MujocoSimulation()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.sim.close()
+
+    def test_handoff_and_place_both_items(self):
+        for seed in (0, 1, 2):
+            with self.subTest(seed=seed):
+                self.sim.reset(seed)
+                task = make_task(seed)
+                expert = ScriptedExpert(self.sim, task)
+                holders = set()
+                steps = 0
+                while not expert.done and steps < 900:
+                    self.sim.step(expert.act(self.sim.observe()))
+                    holders |= compute_facts(self.sim).held_by[task.utensil]
+                    steps += 1
+                for _ in range(10):
+                    self.sim.step(expert.act(self.sim.observe()))
+                f = compute_facts(self.sim)
+                self.assertTrue(expert.done)
+                self.assertEqual(holders, {"left_arm", "right_arm"}, "both arms must hold the utensil")
+                self.assertEqual(f.in_zone[task.utensil], "utensil_zone")
+                self.assertEqual(f.in_zone["cup"], "cup_zone")
+                other = "spoon" if task.utensil == "fork" else "fork"
+                self.assertIsNone(f.in_zone[other])
+                for item in ("cup", task.utensil):
+                    self.assertEqual(f.touching[item], set())
+                    self.assertLess(f.speed[item], 0.02)
