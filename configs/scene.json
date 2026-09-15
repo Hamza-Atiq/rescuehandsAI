@@ -18,9 +18,10 @@
   },
   "utensil": {
     "slots": [[0.25, 0.24], [0.33, 0.24]], "pos_noise": 0.008, "yaw_noise": 0.08,
-    "handle_half": [0.055, 0.006, 0.006], "scale": [0.95, 1.08],
+    "handle_half": [0.065, 0.006, 0.006], "scale": [0.95, 1.05],
     "mass": [0.015, 0.04], "friction": [0.7, 1.2]
   },
+  "handoff": {"right_grasp": [0.10, 0.16, 0.06]},
   "light": {"diffuse": [0.45, 0.85], "offset": 0.4},
   "cameras": {
     "overhead": {"pos": [0.0, 0.18, 1.05], "xyaxes": [1, 0, 0, 0, 1, 0], "fovy": 45},

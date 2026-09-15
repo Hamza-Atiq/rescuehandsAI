@@ -80,7 +80,9 @@ class IKSolver:
         return finger, np.array([-u[1], u[0], 0.0])
 
     def solve(self, arm: str, target, *, closing_xy=None, pitch=np.pi / 2, approach_xy=None,
-              q_init: dict | None = None, tol=0.005, iterations=250):
+              q_init: dict | None = None, tol=0.005, iterations=250, closing_sign=None):
+        """IK for the gripperframe site. `closing_sign` (+1/-1) fixes which way the jaws
+        face (and so which side the wrist camera is on); None accepts either."""
         info = self._arm[arm]
         target = np.asarray(target, dtype=float)
         mujoco.mj_kinematics(self.model, self.data)
@@ -102,7 +104,10 @@ class IKSolver:
             for _ in range(iterations):
                 pos, mat = self._set(arm, q)
                 finger, closing = hand_axes(mat)
-                sign = 1.0 if np.dot(closing, c) >= 0 else -1.0
+                if closing_sign is None:
+                    sign = 1.0 if np.dot(closing, c) >= 0 else -1.0
+                else:
+                    sign = closing_sign
                 e_pos = target - pos
                 e_rot = _cross(finger, want_finger) + _cross(closing, sign * c)
                 if e_pos @ e_pos < (tol * 0.3) ** 2 and e_rot @ e_rot < 1e-4:
@@ -119,7 +124,9 @@ class IKSolver:
             pos, mat = self._set(arm, q)
             finger, closing = hand_axes(mat)
             err = np.linalg.norm(target - pos)
-            ok = err < tol and np.dot(finger, want_finger) > 0.97 and abs(np.dot(closing, c)) > 0.95
+            dot = np.dot(closing, c)
+            align = abs(dot) if closing_sign is None else dot * closing_sign
+            ok = err < tol and np.dot(finger, want_finger) > 0.97 and align > 0.95
             if ok and err < best_err:
                 best, best_err = q.copy(), err
                 if err < tol * 0.3:

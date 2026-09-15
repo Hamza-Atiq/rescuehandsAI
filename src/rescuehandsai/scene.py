@@ -88,7 +88,7 @@ def _utensil_xml(item: str, params: SceneParams, config: dict) -> str:
     hx *= s
     x, y, yaw = params.poses[item]
     mass, fr = params.masses[item], params.frictions[item]
-    common = f'friction="{fr:.4g} 0.01 0.001" condim="4" solref="0.01 1"'
+    common = f'friction="{fr:.4g} 0.05 0.002" condim="4" solref="0.01 1"'
     if item == "fork":
         rgba = "0.50 0.52 0.58 1"
         head = [f'<geom name="fork_neck" type="box" size="{0.006*s:.4g} {0.012*s:.4g} {hz*0.7:.4g}" '
@@ -105,7 +105,7 @@ def _utensil_xml(item: str, params: SceneParams, config: dict) -> str:
     return f"""
     <body name="{item}" pos="{x:.5f} {y:.5f} {hz + 0.0005:.5f}" euler="0 0 {yaw:.5f}">
       <freejoint name="{item}_free"/>
-      <inertial pos="{0.02*s:.4g} 0 0" mass="{mass:.6g}" diaginertia="{_v(inertia)}"/>
+      <inertial pos="{0.01*s:.4g} 0 0" mass="{mass:.6g}" diaginertia="{_v(inertia)}"/>
       <geom name="{item}_handle" type="box" size="{hx:.4g} {hy:.4g} {hz:.4g}" rgba="{rgba}" {common} mass="0"/>
       {"".join(head)}
     </body>"""

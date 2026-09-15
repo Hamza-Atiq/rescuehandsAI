@@ -10,14 +10,16 @@ TASK_ID = "set_place_cup_and_handoff"
 # Every template names the utensil; the tray holds both, so language decides.
 TEMPLATES = (
     "Set the table: put the cup by the plate and pass the {u} to the left hand.",
-    "Place the cup next to the plate, then hand the {u} over to the left arm.",
+    "Hand the {u} over to the left arm, then place the cup next to the plate.",
     "Put the cup on the right of the plate and give the {u} to the left arm to place.",
     "Set a place for dinner: cup beside the plate, and pass me the {u} with the other hand.",
-    "Move the cup to its spot by the plate. Then pick up the {u} and hand it to the left hand.",
+    "Pick up the {u} and hand it to the left hand. Then move the cup to its spot by the plate.",
     "Cup next to the plate please, and the {u} goes left of the plate after a hand-off.",
 )
 
-SUBTASKS = ("place_cup", "pick_utensil", "handoff", "place_utensil")
+# Utensil first: swinging a 20 cm utensil to the hand-off point would sweep through
+# an already placed cup. The free right hand places the cup at the end.
+SUBTASKS = ("pick_utensil", "handoff", "place_utensil", "place_cup")
 
 
 @dataclass(frozen=True)
