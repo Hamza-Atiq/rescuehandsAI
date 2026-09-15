@@ -62,7 +62,7 @@ def main():
                     steps += 1
             except Exception as exc:  # planning or safety stop: not a demonstration
                 error = f"{type(exc).__name__}: {exc}"
-            outcome = task_outcome(compute_facts(sim), task, holders) if error is None else {"success": False}
+            outcome = task_outcome(compute_facts(sim), task, holders, sim.scene_params) if error is None else {"success": False}
             keep = error is None and expert.done and outcome["success"]
             if keep:
                 recorder.save()

@@ -24,6 +24,7 @@ class AuditFacts:
     speed: dict          # item -> linear speed (m/s)
     out_of_bounds: set
     cross_arm_contact: bool
+    positions: dict = None  # item -> (x, y, z)
 
 
 @dataclass(frozen=True)
@@ -72,10 +73,11 @@ def compute_facts(sim) -> AuditFacts:
     zones = sim.scene_config["zones"]
     thx, thy = sim.scene_config["table"]["half_size"]
     tcx, tcy = sim.scene_config["table"]["center"]
-    in_zone, height, speed, oob = {}, {}, {}, set()
+    in_zone, height, speed, oob, positions = {}, {}, {}, set(), {}
     state = sim.privileged().objects
     for item in SCENE_ITEMS:
         x, y, z = state[item].position
+        positions[item] = (x, y, z)
         height[item] = z
         speed[item] = math.sqrt(sum(v * v for v in state[item].linear_velocity))
         in_zone[item] = next((name for name, zone in zones.items()
@@ -89,7 +91,7 @@ def compute_facts(sim) -> AuditFacts:
         held_by={i: touch_fixed[i] & touch_moving[i] for i in SCENE_ITEMS},
         touching={i: touch_fixed[i] | touch_moving[i] for i in SCENE_ITEMS},
         supported=supported, in_zone=in_zone, height=height, speed=speed,
-        out_of_bounds=oob, cross_arm_contact=cross)
+        out_of_bounds=oob, cross_arm_contact=cross, positions=positions)
 
 
 class FailureMonitor:
