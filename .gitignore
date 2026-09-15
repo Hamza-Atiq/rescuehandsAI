@@ -16,3 +16,8 @@ hackathon-page.html
 .venv-ml/
 MUJOCO_LOG.TXT
 .venv-pai/
+data/
+data_*.log
+outputs/
+models/
+results/
