@@ -7,6 +7,7 @@
   "max_command_delta": 0.15,
   "width": 256,
   "height": 256,
+  "render_shadows": false,
   "home": [0, -0.9, 0.5, 1.6, 0, 0.3],
   "instruction": "Prepare the two arms for the dinner-table task."
 }
