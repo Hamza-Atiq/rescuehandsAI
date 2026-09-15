@@ -87,18 +87,19 @@ def data(hf_user: str, episodes: int, shards: int, first_seed: int):
     run([PY, "-c", merge], env={"HF_TOKEN": hf_token()})
 
 
-def train(hf_user: str, steps: int, batch_size: int):
+def train(hf_user: str, steps: int, batch_size: int, save_freq: int, push: bool):
     repo = f"{hf_user}/rescuehands_table"
-    out = ROOT / "outputs" / "smolvla_rescuehands"
+    name = "smolvla_rescuehands" if push else "smolvla_smoke"
+    out = ROOT / "outputs" / name
     run([PY, "-m", "lerobot.scripts.lerobot_train",
          "--policy.path=lerobot/smolvla_base",
          f"--dataset.repo_id={repo}",
          f"--rename_map={json.dumps(CAMERA_RENAME)}",
          f"--batch_size={batch_size}", f"--steps={steps}",
-         "--save_freq=2000", "--log_freq=100", "--eval_freq=0",
-         f"--output_dir={out}", "--job_name=smolvla_rescuehands",
+         f"--save_freq={save_freq}", f"--log_freq={min(100, steps)}", "--eval_freq=0",
+         f"--output_dir={out}", f"--job_name={name}",
          "--policy.device=cuda", "--wandb.enable=false",
-         "--policy.push_to_hub=true", f"--policy.repo_id={hf_user}/smolvla_rescuehands"],
+         f"--policy.push_to_hub={str(push).lower()}", f"--policy.repo_id={hf_user}/smolvla_rescuehands"],
         env={"HF_TOKEN": hf_token()})
 
 
@@ -111,6 +112,8 @@ def main():
     parser.add_argument("--first-seed", type=int, default=1000)
     parser.add_argument("--steps", type=int, default=12000)
     parser.add_argument("--batch-size", type=int, default=16)
+    parser.add_argument("--save-freq", type=int, default=3000)
+    parser.add_argument("--no-push", action="store_true", help="smoke test: keep the checkpoint local")
     args = parser.parse_args()
     if args.first_seed < 10:
         parser.error("seeds 0-9 are reserved for evaluation")
@@ -119,7 +122,7 @@ def main():
     if args.stage in ("data", "all"):
         data(args.hf_user, args.episodes, args.shards, args.first_seed)
     if args.stage in ("train", "all"):
-        train(args.hf_user, args.steps, args.batch_size)
+        train(args.hf_user, args.steps, args.batch_size, args.save_freq, not args.no_push)
 
 
 if __name__ == "__main__":
