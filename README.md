@@ -54,20 +54,35 @@ the 12 joint targets directly; there is no IK in the learned control loop.
 ## Results
 
 All numbers come from files under `results/` produced by `scripts/evaluate.py`
-and `scripts/benchmark_intel.py`. Evaluation seeds 0–9 are never used for training
-data (training seeds start at 1000).
+and `scripts/benchmark_intel.py`; the scripted rows are committed in
+`results/scripted_v2_*` (code revision `484d2bd`). Evaluation seeds 0–9 are never
+used for training data (training seeds start at 1000), but they did guide debugging
+of the scripted teacher, so they are not a pristine unseen set.
 
 ### Task success on 10 randomized seeds
 
 Each seed randomizes item positions, cup size, mass, friction, utensil size and
 order, lighting and table colour. "Gripper glitch" forces the holding hand open
-for 0.5 s after the utensil is lifted (a real physical drop).
+for 0.5 s of simulated time after the utensil is lifted (a real physical drop); the
+fault clock runs the same way with and without recovery.
+
+Success is physical and checked over 10 consecutive control steps: cup and
+utensil inside their zones, released, resting on the table or plate, cup axis
+within 15° of vertical, low linear and angular speed, spare utensil untouched, and
+an **ordered in-air hand-off** (right hand alone → both hands while airborne →
+left hand alone). Dropping the utensil and picking it up with the other hand does
+not count.
 
 | Policy | Supervisor | Fault | Success | Notes |
 | --- | --- | --- | ---: | --- |
-| Scripted teacher (baseline) | on | none | 8/10 | 2 failures: one planning error, one recovery budget exhausted |
-| Scripted teacher (baseline) | off | gripper glitch | 0/10 | every drop breaks the task |
-| Scripted teacher (baseline) | on | gripper glitch | 6/10 | recovered 6 of 10 drops; 2 recovery budgets exhausted, 1 missed target, 1 planning error |
+| Scripted teacher (baseline) | on | none | 8/10 | 2 failures: one planning error (seed 6), one recovery budget exhausted (seed 9) |
+| Scripted teacher (baseline) | off | gripper glitch | 0/10 | every drop breaks the task (teacher cannot plan from the dropped pose) |
+| Scripted teacher (baseline) | on | gripper glitch | **7/10** | recovered 7 of 10 drops; 2 recovery budgets exhausted (seeds 6, 8), 1 planning error (seed 9) |
+
+An independent review ([report](docs/research/2026-09-15-independent-code-review.md))
+found that the fault clock paused during recovery and that some success sub-checks
+were too weak. After the fixes the rows above were re-measured: the clean and
+no-supervisor rows are unchanged, and the supervised fault row moved from 6/10 to 7/10.
 | SmolVLA (OpenVINO, iGPU) | off | none | pending | |
 | SmolVLA (OpenVINO, iGPU) | on | gripper glitch | pending | |
 

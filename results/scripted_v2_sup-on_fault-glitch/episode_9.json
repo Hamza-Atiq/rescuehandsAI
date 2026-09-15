@@ -1,0 +1,50 @@
+{
+  "seed": 9,
+  "policy": {
+    "name": "scripted_teacher",
+    "backend": "python",
+    "device": "cpu",
+    "checkpoint": null,
+    "privileged_state": true,
+    "note": "IK teacher; baseline and demonstration source only"
+  },
+  "instruction": "Pick up the fork and hand it to the left hand. Then move the cup to its spot by the plate.",
+  "supervisor": true,
+  "fault": "GripperGlitch",
+  "state": "FAILED",
+  "steps": 262,
+  "events": [
+    {
+      "label": "OBJECT_DROPPED",
+      "time": 4.399999999999928,
+      "item": "fork",
+      "arm": "right_arm"
+    },
+    {
+      "label": "POLICY_ERROR",
+      "time": 13.100000000000648,
+      "detail": "left_arm: no pitch reaches [0.334, 0.318, -0.001] with 0.02 m clearance"
+    }
+  ],
+  "recoveries": 1,
+  "clamped_joint_steps": 0,
+  "inference_calls": 0,
+  "inference_seconds": [],
+  "fault_step": 85,
+  "max_steps": 1500,
+  "max_recoveries": 2,
+  "outcome": {
+    "success": false,
+    "cup_in_zone": false,
+    "utensil_in_zone": false,
+    "handoff": false,
+    "released": true,
+    "supported": true,
+    "cup_upright": true,
+    "settled": true,
+    "spare_utensil_in_place": false
+  },
+  "failure": "POLICY_ERROR",
+  "sim_seconds": 13.100000000000648,
+  "wall_seconds": 7.32
+}

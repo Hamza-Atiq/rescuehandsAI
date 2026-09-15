@@ -1,0 +1,45 @@
+{
+  "seed": 0,
+  "policy": {
+    "name": "scripted_teacher",
+    "backend": "python",
+    "device": "cpu",
+    "checkpoint": null,
+    "privileged_state": true,
+    "note": "IK teacher; baseline and demonstration source only"
+  },
+  "instruction": "Cup next to the plate please, and the spoon goes left of the plate after a hand-off.",
+  "supervisor": true,
+  "fault": "GripperGlitch",
+  "state": "SUCCEEDED",
+  "steps": 658,
+  "events": [
+    {
+      "label": "OBJECT_DROPPED",
+      "time": 4.099999999999935,
+      "item": "spoon",
+      "arm": "right_arm"
+    }
+  ],
+  "recoveries": 1,
+  "clamped_joint_steps": 0,
+  "inference_calls": 0,
+  "inference_seconds": [],
+  "fault_step": 79,
+  "max_steps": 1500,
+  "max_recoveries": 2,
+  "outcome": {
+    "success": true,
+    "cup_in_zone": true,
+    "utensil_in_zone": true,
+    "handoff": true,
+    "released": true,
+    "supported": true,
+    "cup_upright": true,
+    "settled": true,
+    "spare_utensil_in_place": true
+  },
+  "failure": null,
+  "sim_seconds": 32.89999999999838,
+  "wall_seconds": 15.45
+}

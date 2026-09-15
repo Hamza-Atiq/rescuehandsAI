@@ -1,0 +1,50 @@
+{
+  "seed": 5,
+  "policy": {
+    "name": "scripted_teacher",
+    "backend": "python",
+    "device": "cpu",
+    "checkpoint": null,
+    "privileged_state": true,
+    "note": "IK teacher; baseline and demonstration source only"
+  },
+  "instruction": "Pick up the spoon and hand it to the left hand. Then move the cup to its spot by the plate.",
+  "supervisor": false,
+  "fault": "GripperGlitch",
+  "state": "FAILED",
+  "steps": 133,
+  "events": [
+    {
+      "label": "OBJECT_DROPPED",
+      "time": 4.3499999999999295,
+      "item": "spoon",
+      "arm": "right_arm"
+    },
+    {
+      "label": "POLICY_ERROR",
+      "time": 6.6499999999998805,
+      "detail": "left_arm: no pitch reaches [0.295, 0.286, -0.001] with 0.02 m clearance"
+    }
+  ],
+  "recoveries": 0,
+  "clamped_joint_steps": 0,
+  "inference_calls": 0,
+  "inference_seconds": [],
+  "fault_step": 84,
+  "max_steps": 1500,
+  "max_recoveries": 2,
+  "outcome": {
+    "success": false,
+    "cup_in_zone": false,
+    "utensil_in_zone": false,
+    "handoff": false,
+    "released": true,
+    "supported": true,
+    "cup_upright": true,
+    "settled": true,
+    "spare_utensil_in_place": true
+  },
+  "failure": "POLICY_ERROR",
+  "sim_seconds": 6.6499999999998805,
+  "wall_seconds": 4.21
+}
