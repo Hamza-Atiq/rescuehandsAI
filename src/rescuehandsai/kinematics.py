@@ -38,6 +38,7 @@ class IKSolver:
                 "high": np.array([min(model.jnt_range[j.id][1], model.actuator(j.name).ctrlrange[1])
                                   for j in joints]),
                 "site": model.site(f"{arm}/gripperframe").id,
+                "base": model.body(f"{arm}/base").id,
             }
 
     def _set(self, arm, q):
@@ -53,12 +54,32 @@ class IKSolver:
         finger, closing = hand_axes(mat)
         return pos, finger, closing
 
-    def solve(self, arm: str, target, *, closing_xy=(1.0, 0.0), q_init: dict | None = None,
-              tol=0.005, iterations=250):
+    def desired_axes(self, arm: str, target, pitch: float, closing_xy=None, approach_xy=None):
+        """Finger direction and jaw closing axis for a hand tilted `pitch` below horizontal.
+
+        pitch = pi/2 points straight down and needs `closing_xy`. Smaller pitches
+        approach along `approach_xy` (default: outward from the arm base) with a
+        horizontal closing axis perpendicular to the approach.
+        """
+        if abs(pitch - np.pi / 2) < 1e-6:
+            if closing_xy is None:
+                raise ValueError("A straight-down hand needs closing_xy")
+            c = np.array([closing_xy[0], closing_xy[1], 0.0])
+            return DOWN.copy(), c / np.linalg.norm(c)
+        if approach_xy is None:
+            base = self.data.xpos[self._arm[arm]["base"]]
+            approach_xy = np.asarray(target, dtype=float)[:2] - base[:2]
+        u = np.asarray(approach_xy, dtype=float)
+        u = u / np.linalg.norm(u)
+        finger = np.array([np.cos(pitch) * u[0], np.cos(pitch) * u[1], -np.sin(pitch)])
+        return finger, np.array([-u[1], u[0], 0.0])
+
+    def solve(self, arm: str, target, *, closing_xy=None, pitch=np.pi / 2, approach_xy=None,
+              q_init: dict | None = None, tol=0.005, iterations=250):
         info = self._arm[arm]
         target = np.asarray(target, dtype=float)
-        c = np.array([closing_xy[0], closing_xy[1], 0.0])
-        c /= np.linalg.norm(c)
+        mujoco.mj_kinematics(self.model, self.data)
+        want_finger, c = self.desired_axes(arm, target, pitch, closing_xy, approach_xy)
         starts = []
         if q_init is not None:
             starts.append(np.array([q_init[n] for n in info["names"]]))
@@ -76,7 +97,7 @@ class IKSolver:
                 finger, closing = hand_axes(mat)
                 sign = 1.0 if np.dot(closing, c) >= 0 else -1.0
                 e_pos = target - pos
-                e_rot = np.cross(finger, DOWN) + np.cross(closing, sign * c)
+                e_rot = np.cross(finger, want_finger) + np.cross(closing, sign * c)
                 if np.linalg.norm(e_pos) < tol * 0.3 and np.linalg.norm(e_rot) < 0.01:
                     break
                 mujoco.mj_jacSite(self.model, self.data, jacp, jacr, info["site"])
@@ -90,7 +111,7 @@ class IKSolver:
             pos, mat = self._set(arm, q)
             finger, closing = hand_axes(mat)
             err = np.linalg.norm(target - pos)
-            ok = err < tol and -finger[2] > 0.97 and abs(np.dot(closing, c)) > 0.95
+            ok = err < tol and np.dot(finger, want_finger) > 0.97 and abs(np.dot(closing, c)) > 0.95
             if ok and err < best_err:
                 best, best_err = q.copy(), err
                 if err < tol * 0.3:
@@ -98,3 +119,15 @@ class IKSolver:
         if best is None:
             return None
         return dict(zip(info["names"], map(float, best)))
+
+    def solve_tilted(self, arm: str, target, *, pitches=(np.pi / 2, 1.2, 1.0, 0.8, 0.6, 0.4),
+                     closing_xy=None, approach_xy=None, q_init=None, tol=0.005):
+        """Try the steepest hand first; return (joint targets, pitch) or (None, None)."""
+        for pitch in pitches:
+            if abs(pitch - np.pi / 2) < 1e-6 and closing_xy is None:
+                continue
+            q = self.solve(arm, target, closing_xy=closing_xy, pitch=pitch, approach_xy=approach_xy,
+                           q_init=q_init, tol=tol)
+            if q is not None:
+                return q, pitch
+        return None, None
