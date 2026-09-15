@@ -65,8 +65,9 @@ class MujocoSimulation:
             root = model.body(int(model.body_rootid[model.geom_bodyid[g]])).name
             self.geom_arm.append(next((arm for arm in ARMS if root.startswith(arm + "/")), None))
 
-    def reset(self, seed: int):
+    def reset(self, seed: int, instruction: str | None = None):
         self.seed = seed
+        self.instruction = instruction or self.config["instruction"]
         self.scene_params = sample_params(self.scene_config, seed)
         self.close()
         self.model = build_model(self.scene_params, self.scene_config, self.asset_path)
@@ -80,6 +81,7 @@ class MujocoSimulation:
         mujoco.mj_forward(self.model, self.data)
         self.previous = dict(self.home_targets)
         self.contact_samples = 0
+        self.faults = {}
 
     # -- observations --------------------------------------------------------
     def render(self, cameras: dict, width=None, height=None) -> dict:
@@ -92,12 +94,15 @@ class MujocoSimulation:
         frames = {}
         for out_name, camera in cameras.items():
             renderer.update_scene(self.data, camera=camera)
+            # Shadows cost ~6x render time on integrated graphics. Training data and
+            # deployment must use the same setting, so it lives in config.
+            renderer.scene.flags[mujoco.mjtRndFlag.mjRND_SHADOW] = bool(self.config["render_shadows"])
             frames[out_name] = renderer.render().copy()
         return frames
 
     def observe(self, *, images=False):
         frames = self.render(POLICY_CAMERAS) if images else {}
-        return Observation(float(self.data.time), self.config["instruction"],
+        return Observation(float(self.data.time), self.instruction,
                            dict(zip(self.names, map(float, self.data.qpos[self._qpos]))),
                            dict(zip(self.names, map(float, self.data.qvel[self._qvel]))), frames)
 
@@ -121,14 +126,28 @@ class MujocoSimulation:
         site = self.data.site(name)
         return site.xpos.copy(), site.xmat.reshape(3, 3).copy()
 
+    # -- fault injection (evaluation only) ---------------------------------------
+    def set_actuator_fault(self, name: str, value: float | None):
+        """Simulated actuator fault: the named motor follows `value` instead of its
+        command until cleared with None. Used only to inject failures in evaluation."""
+        if name not in self.names:
+            raise KeyError(name)
+        if value is None:
+            self.faults.pop(name, None)
+        else:
+            low, high = self.limits[name]
+            self.faults[name] = min(high, max(low, float(value)))
+
     # -- stepping ------------------------------------------------------------
     def step(self, action: BimanualAction):
         cfg = self.config
         values = validate_action(action, self.names, self.limits, self.previous,
                                  now=float(self.data.time), max_age=cfg["max_action_age"],
                                  max_delta=cfg["max_command_delta"])
-        self.data.ctrl[self._actuators] = values
         self.previous = dict(zip(self.names, values))
+        if self.faults:
+            values = tuple(self.faults.get(n, v) for n, v in zip(self.names, values))
+        self.data.ctrl[self._actuators] = values
         for _ in range(self.substeps):
             mujoco.mj_step(self.model, self.data)
             if not np.isfinite(self.data.qpos).all() or not np.isfinite(self.data.qvel).all():
