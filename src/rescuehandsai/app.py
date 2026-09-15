@@ -13,7 +13,7 @@ import imageio.v2 as imageio
 import mujoco
 
 from .contracts import BimanualAction, EpisodeResult
-from .sim import MujocoSimulation, ROOT
+from .sim import MujocoSimulation, ROOT, VIDEO_CAMERAS
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -33,7 +33,7 @@ def main():
         sim = MujocoSimulation()
         sim.reset(args.seed)
         initial = sim.observe(images=True)
-        for name, image in initial.images.items():
+        for name, image in (initial.images | sim.render(VIDEO_CAMERAS)).items():
             imageio.imwrite(output / f"{name}-initial.png", image)
         ranges = {n: [v, v] for n, v in initial.positions.items()}
         with (output / "steps.jsonl").open("w", encoding="utf-8") as log:
@@ -46,12 +46,12 @@ def main():
                 before = sim.observe()
                 action = BimanualAction(before.timestamp, targets)
                 sim.step(action)
-                obs = sim.observe(images=(step % 5 == 0))
+                obs = sim.observe()
                 for name, value in obs.positions.items():
                     ranges[name][0] = min(ranges[name][0], value)
                     ranges[name][1] = max(ranges[name][1], value)
-                if obs.images:
-                    frames.append(obs.images["front"])
+                if step % 5 == 0:
+                    frames.append(sim.render(VIDEO_CAMERAS)["front"])
                 log.write(json.dumps({"step": step, "action": asdict(action),
                                       "positions": obs.positions,
                                       "state": asdict(sim.privileged())}, allow_nan=False) + "\n")
@@ -62,7 +62,7 @@ def main():
         report.update(asdict(EpisodeResult(args.seed, "scripted_motor_check", passed)))
         report["joint_travel_radians"] = travel
         report["simulated_seconds"] = sim.observe().timestamp
-        report["contact_samples"] = len(sim.contact_history)
+        report["contact_samples"] = sim.contact_samples
         report["configuration"] = sim.config
         report["mujoco_version"] = mujoco.__version__
         report["python_version"] = platform.python_version()
@@ -74,14 +74,14 @@ def main():
         revision = subprocess.run(["git", "-C", str(sim.asset_path.parents[1]), "rev-parse", "HEAD"],
                                   capture_output=True, text=True, timeout=10)
         report["robot_revision_actual"] = revision.stdout.strip() if revision.returncode == 0 else None
-        for name, image in sim.observe(images=True).images.items():
+        for name, image in (sim.observe(images=True).images | sim.render(VIDEO_CAMERAS)).items():
             imageio.imwrite(output / f"{name}-final.png", image)
         if frames:
             imageio.mimsave(output / "control-preview.gif", frames,
                            duration=sim.config["control_dt"] * 5 * 1000, loop=0)
         report["limitations"] = [
             "Motor and camera check only; no grasp, hand-off or table-setting policy.",
-            "Only object XY placement is randomized in this foundation.",
+            "Scene randomization is applied, but no task is attempted.",
             "PlacementTracker has unit tests but is not a complete physics auditor.",
             "Cross-arm contacts stop stepping; full self/table collision handling remains.",
             "No VLA training, recovery or OpenVINO benchmark yet.",

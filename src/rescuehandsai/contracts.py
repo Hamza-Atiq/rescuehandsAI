@@ -20,10 +20,17 @@ class Observation:
 
 
 @dataclass(frozen=True)
+class ObjectState:
+    position: tuple[float, float, float]
+    quaternion: tuple[float, float, float, float]
+    linear_velocity: tuple[float, float, float]
+
+
+@dataclass(frozen=True)
 class PrivilegedState:
+    """Simulator ground truth for the teacher, auditor and evaluation only."""
     timestamp: float
-    object_position: tuple[float, float, float]
-    object_velocity: tuple[float, ...]
+    objects: Mapping[str, ObjectState]
     contacts: tuple[tuple[str, str], ...]
 
 
