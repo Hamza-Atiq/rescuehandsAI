@@ -4,9 +4,11 @@ Run inside a Kaggle notebook (GPU T4/P100, Internet ON, secret HF_TOKEN set):
 
     !git clone https://github.com/<you>/rescuehandsAI.git
     %cd rescuehandsAI
-    !python training/kaggle_pipeline.py --hf-user <you> --episodes 120 --steps 12000
+    !python training/kaggle_pipeline.py --hf-user <you> --stage setup
+    !python training/kaggle_pipeline.py --hf-user <you> --stage train --steps 12000
 
-Stages can be run separately with --stage setup|data|train|all. Rendering uses
+Stages: setup|data|probe|train|verify|all. `train` verifies the saved checkpoint
+(12-D schema, normalizer stats, one real (50, 12) action chunk) when it finishes. Rendering uses
 EGL on the GPU, which is hundreds of times faster than the laptop's iGPU.
 Training data may be produced anywhere; the final demo and benchmark run on the
 Intel laptop (organizer rule), with the same render settings (shadows off).
@@ -94,8 +96,11 @@ def train(hf_user: str, steps: int, batch_size: int, save_freq: int, push: bool,
     """precision: bf16 = SmolVLA default weights; fp32 = float32 weights;
     fp16 = float32 weights with fp16 autocast (T4 has fast fp16 kernels, no bf16)."""
     repo = f"{hf_user}/rescuehands_table"
-    name = name or ("smolvla_rescuehands" if push else "smolvla_smoke")
+    name = name or run_name(push)
     out = ROOT / "outputs" / name
+    if not push:  # smoke runs are disposable; LeRobot refuses an existing output dir
+        import shutil
+        shutil.rmtree(out, ignore_errors=True)
     args = ["--policy.path=lerobot/smolvla_base",
             f"--dataset.repo_id={repo}",
             f"--rename_map={json.dumps(CAMERA_RENAME)}",
@@ -115,6 +120,16 @@ def train(hf_user: str, steps: int, batch_size: int, save_freq: int, push: bool,
     else:
         cmd = [PY, launcher, *args]
     run(cmd, env=env, stdout=stdout)
+
+
+def run_name(push: bool) -> str:
+    return "smolvla_rescuehands" if push else "smolvla_smoke"
+
+
+def verify(hf_user: str, push: bool):
+    checkpoint = ROOT / "outputs" / run_name(push) / "checkpoints" / "last" / "pretrained_model"
+    run([PY, ROOT / "training" / "verify_checkpoint.py", "--checkpoint", checkpoint,
+         "--dataset", f"{hf_user}/rescuehands_table"])
 
 
 def probe(hf_user: str, batch_size: int):
@@ -147,7 +162,7 @@ def probe(hf_user: str, batch_size: int):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--hf-user", required=True)
-    parser.add_argument("--stage", choices=["setup", "data", "probe", "train", "all"], default="all")
+    parser.add_argument("--stage", choices=["setup", "data", "probe", "train", "verify", "all"], default="all")
     parser.add_argument("--episodes", type=int, default=120)
     parser.add_argument("--shards", type=int, default=4)
     parser.add_argument("--first-seed", type=int, default=1000)
@@ -155,7 +170,8 @@ def main():
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--save-freq", type=int, default=3000)
     parser.add_argument("--no-push", action="store_true", help="smoke test: keep the checkpoint local")
-    parser.add_argument("--precision", choices=["fp16", "fp32", "bf16"], default="fp16")
+    parser.add_argument("--precision", choices=["fp16", "fp32", "bf16"], default="fp16",
+                        help="fp16 measured 1.33 s/step on a T4 at batch 16; fp32 4.7 s; bf16 7.4 s")
     parser.add_argument("--gpus", type=int, default=1)
     parser.add_argument("--num-workers", type=int, default=4)
     args = parser.parse_args()
@@ -170,6 +186,8 @@ def main():
     if args.stage in ("train", "all"):
         train(args.hf_user, args.steps, args.batch_size, args.save_freq, not args.no_push,
               args.precision, args.gpus, args.num_workers)
+    if args.stage in ("train", "verify"):
+        verify(args.hf_user, not args.no_push)
 
 
 if __name__ == "__main__":
