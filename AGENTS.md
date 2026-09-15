@@ -40,6 +40,20 @@ session. These confirmed requirements override older assumptions in this file:
 - The linked installation guide targets Ubuntu 24.04 and suitable Intel hardware.
   Its driver installers are not instructions to modify this Windows computer.
 
+### Decisions and organizer clarifications — September 15, 2026
+
+- Deadline: 2026-09-16 23:30 Pakistan Standard Time (lablab.ai schedule).
+  Submission: public MIT GitHub repo, video, slides, cover image.
+- Organizer Discord reply (relayed by the owner): training may happen on any
+  machine, but the VLA/VLM policy must be executed on Intel XPUs; a non-Core-Ultra
+  Intel CPU + iGPU was accepted as an alternative. No remote Intel system is
+  provided. Deploy on the owner's Intel Core i5-6300U CPU + HD Graphics 520.
+- Organizer: IK must not dominate robot control. IK is allowed only inside the
+  scripted demonstration teacher; deployed control comes from the VLA.
+- Organizer: a simpler VLA combined with a more complex VLM is welcome.
+- Owner decision: SmolVLA is the only learned policy. Train on free Kaggle GPU.
+- Approved design: docs/superpowers/specs/2026-09-15-dinner-table-design.md
+
 Sources: user-supplied Intel Physical AI Online Challenge brief, and
 https://docs.openedgeplatform.intel.com/dev/edge-ai-suites/robotics-ai-suite/resources/hackathon_resources.html
 The brief was pasted in the conversation; its original document URL is not yet
