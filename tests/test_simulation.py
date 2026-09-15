@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 
 from rescuehandsai.contracts import BimanualAction
-from rescuehandsai.sim import MujocoSimulation
+from rescuehandsai.sim import MujocoSimulation, POLICY_CAMERAS, VIDEO_CAMERAS
 
 
 class SimulationTests(unittest.TestCase):
@@ -18,15 +18,19 @@ class SimulationTests(unittest.TestCase):
     def setUp(self):
         self.sim.reset(seed=42)
 
-    def test_reset_repeats_object_placement_and_robot_state(self):
+    def hold(self, steps):
+        for _ in range(steps):
+            self.sim.step(BimanualAction(self.sim.observe().timestamp, self.sim.home_targets))
+
+    def test_reset_repeats_scene_and_robot_state(self):
         before = self.sim.observe()
-        obj = self.sim.privileged().object_position
-        self.sim.step(BimanualAction(before.timestamp, dict(before.positions)))
+        objects = self.sim.privileged().objects
+        self.hold(2)
         self.sim.reset(seed=42)
         self.assertEqual(self.sim.observe().positions, before.positions)
-        self.assertEqual(self.sim.privileged().object_position, obj)
+        self.assertEqual(self.sim.privileged().objects, objects)
         self.sim.reset(seed=43)
-        self.assertNotEqual(self.sim.privileged().object_position, obj)
+        self.assertNotEqual(self.sim.privileged().objects["cup"].position, objects["cup"].position)
 
     def test_both_arms_and_grippers_respond_by_name(self):
         sim = self.sim
@@ -36,7 +40,7 @@ class SimulationTests(unittest.TestCase):
         targets['right_arm/shoulder_pan'] -= 0.08
         targets['left_arm/gripper'] += 0.08
         targets['right_arm/gripper'] -= 0.08
-        for _ in range(80):
+        for _ in range(30):
             sim.step(BimanualAction(sim.observe().timestamp, targets))
         after = sim.observe()
         for name, sign in [('left_arm/shoulder_pan', 1), ('right_arm/shoulder_pan', -1),
@@ -53,23 +57,27 @@ class SimulationTests(unittest.TestCase):
         self.assertEqual(before.positions, self.sim.observe().positions)
         self.assertEqual(before.timestamp, self.sim.observe().timestamp)
 
-    def test_cameras_produce_different_nonempty_rgb_images(self):
+    def test_policy_cameras_exclude_video_camera(self):
         frames = self.sim.observe(images=True).images
-        self.assertEqual(set(frames), {'front', 'overhead'})
+        self.assertEqual(set(frames), set(POLICY_CAMERAS))
+        self.assertNotIn("front", frames)
         for frame in frames.values():
-            self.assertEqual(frame.shape, (240, 320, 3))
+            self.assertEqual(frame.shape, (256, 256, 3))
             self.assertEqual(frame.dtype, np.uint8)
             self.assertGreater(float(frame.std()), 5)
-        self.assertFalse(np.array_equal(frames['front'], frames['overhead']))
+        self.assertFalse(np.array_equal(frames['left_wrist'], frames['overhead']))
+        video = self.sim.render(VIDEO_CAMERAS)
+        self.assertGreater(float(video["front"].std()), 5)
 
-    def test_object_settles_on_table_through_physics(self):
-        for _ in range(60):
-            obs = self.sim.observe()
-            self.sim.step(BimanualAction(obs.timestamp, self.sim.home_targets))
+    def test_items_settle_on_table_through_physics(self):
+        self.hold(20)
         state = self.sim.privileged()
-        self.assertAlmostEqual(state.object_position[2], 0.026, delta=0.003)
-        self.assertTrue(any('table' in pair and 'table_item' in pair
-                            for pair in state.contacts))
+        cup = state.objects["cup"]
+        self.assertAlmostEqual(cup.position[2], self.sim.scene_params.cup_half_height, delta=0.004)
+        for item in ("fork", "spoon"):
+            self.assertLess(state.objects[item].position[2], 0.02)
+            self.assertLess(max(map(abs, state.objects[item].linear_velocity)), 0.01)
+        self.assertTrue(any('table' in pair and 'cup_body' in pair for pair in state.contacts))
 
 
 if __name__ == '__main__':
