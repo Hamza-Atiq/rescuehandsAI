@@ -1,98 +1,104 @@
-# lablab.ai submission draft — RescueHands AI
+# lablab.ai submission — copy and paste
 
-Fill every `⟨…⟩` from the final result files before submitting. Nothing in angle
-brackets has been measured yet. Every other number in this file is backed by a
-committed result or a Hub page.
+## Project title (max 50 characters)
+RescueHandsAI: A dinner table that survives a drop
 
-## 📋 Basic information
+## Short description
+Two simulated SO-101 arms set a dinner table from a spoken instruction. A fine-tuned SmolVLA policy runs on an Intel iGPU through OpenVINO, and a physics-aware supervisor catches drops and missed grasps and retries safely.
 
-**Project title** (max 50 characters)
-RescueHandsAI: A dinner table that survives a drop   ← 50 characters
+## Long description (project write-up)
 
-Alternative: RescueHands AI: Two Arms Recover a Dropped Fork   ← 47 characters
+**Problem.** A vision-language-action policy always outputs an action, even after
+reality has gone wrong. With two arms, one slip ruins the other hand's work.
+RescueHands AI never trusts an action just because a model produced it: it checks
+what physically happened, then recovers.
 
-**Short description** (one line)
-Two simulated SO-101 arms set a dinner place from a spoken-style instruction with a fine-tuned SmolVLA policy running on an Intel iGPU through OpenVINO, while a physics-aware supervisor catches drops and retries safely.
+**Task.** Two SO-101 arms in MuJoCo set a dinner place. The instruction names a fork or
+a spoon, which lie in random order. The right arm picks the named one, hands it to the
+left arm in the air, the left arm places it beside the plate, and the right arm places
+the cup. Every seed changes positions, sizes, mass, lighting and table colour. Grasps
+are real contacts: nothing is welded or teleported.
 
-**Long description**
+**Architecture.**
+- SmolVLA sees 3 cameras, 12 joint positions and the instruction, and outputs 12 joint
+  targets in 50-action chunks.
+- An action guard enforces joint limits and step size.
+- A physics auditor reads simulator ground truth that the policy never sees: held,
+  dropped, placed.
+- On a drop or a stalled grasp, the supervisor opens both hands, moves to a safe pose,
+  and lets the policy retry, at most twice.
+- Success is measured from physics: items in zones, upright, released and still, plus
+  an ordered in-air hand-off.
+- Inverse kinematics exists only in the scripted teacher that generated the 569
+  training demonstrations, never in the deployed control loop.
 
-*The problem.* A vision-language-action policy always outputs an action, even when
-reality has already gone wrong. In two-arm manipulation, one slip by one hand ruins
-the other hand's work. RescueHands AI tests a simple idea: never trust an action just
-because a model produced it. Check what physically happened, and recover.
+**Workload placement.**
+- Kaggle Tesla T4:
+  - demonstration generation, with GPU EGL rendering: 14 s per episode instead of
+    229 s on the CPU;
+  - SmolVLA fine-tuning (6,000 steps, fp16);
+  - OpenVINO export with Intel Physical AI Studio (195 s).
+- The export was reproduced on the Intel laptop with byte-identical weights.
+- Deployed on an **Intel Core i5-6300U with Intel HD Graphics 520:** policy inference
+  (OpenVINO on the iGPU), MuJoCo simulation, the supervisor and all evaluations.
 
-*The task.* Two SO-101 arms in MuJoCo share a dinner table. The instruction names a
-fork or a spoon, and both lie on a mat in random order, so the words decide which one
-to move. The right arm picks up the named utensil, passes it to the left arm **in the
-air**, the left arm places it beside the plate, and the right arm places the cup. Each
-seed changes positions, sizes, mass, friction, lighting and table colour. Grasps are
-real contacts: nothing is welded or teleported.
+**Hardware optimization.**
+- **OpenVINO on the iGPU:** 4.53 s mean per 50-action chunk (p95 5.26 s, 341 calls).
+  PyTorch on the same laptop's CPU took about 190 s per chunk in a smoke benchmark.
+- **Action chunking:** 25 executed actions per inference.
+- **Shadow-free rendering:** 6× faster, and identical in training and deployment.
+- **Hash-checked model contracts:** inference refuses a mismatched model.
 
-*The learned policy.* SmolVLA sees three cameras (overhead and both wrists), 12 joint
-positions and the instruction, and outputs 12 joint targets in 50-step chunks. There
-is no inverse kinematics in the learned control loop. A scripted IK teacher only makes
-the demonstrations. We fine-tuned on free Kaggle T4 GPUs:
-- v1: 101 demonstrations.
-- v2: 569 demonstrations (336,729 frames). These add perturbed starting states and
-  real drop-and-recover episodes, so the policy has seen what getting back on track
-  looks like.
+**Results on 10 randomized seeds.**
+- Scripted teacher: 8/10 clean. With a real gripper fault it scores 2/10 without the
+  supervisor and 7/10 with it.
+- SmolVLA v2 on the Intel iGPU, with the fault and the supervisor: 1/10 full task
+  successes.
+  - The hand-off was completed in 4/10, the utensil placed in 4/10, the cup placed in 2/10.
+  - Seed 4 recovered from a real drop and set the whole table.
+  - Every failure was detected and labelled.
+  - The main weakness is grasp precision: the policy saw each new frame only 0.28 times
+    in training.
 
-*Safety and recovery.* An action guard enforces joint limits and step size. A physics
-auditor reads simulator state that the policy never sees: is the item held by both
-jaws, supported, in its zone, dropped? When an item really drops, the supervisor opens
-both hands, returns to a safe pose, and lets the policy try again, at most twice.
-Success is measured from physics, never from the policy's claim. It requires both
-items stable in their zones, released and upright, the spare utensil still near its start at the end, and an
-ordered in-air hand-off.
+**Honest limits.**
+- Collision checks cover arm-to-arm contact only.
+- Item friction does not reach the jaw contacts.
+- Simulation pauses during inference.
 
-*Intel optimization.* The fine-tuned policy is exported with Intel Physical AI Studio
-to OpenVINO and runs on an Intel Core i5-6300U with HD Graphics 520. The organizers
-allowed non-Core-Ultra Intel hardware. The benchmark compares PyTorch CPU, OpenVINO
-FP32 on CPU, FP16 on the iGPU, INT8 weights and model caching. Every speed-up is
-reported together with its action difference from the FP32 reference.
+**Reproducibility.**
+- A public GitHub repo with the pinned scene and asset revision.
+- Data, training, export, evaluation and benchmark code.
+- 100 tests.
+- A per-run manifest for every result, and hash-checked contracts.
+- The public model and dataset on Hugging Face.
 
-*Results (10 randomized seeds).*
-- Scripted teacher: 8/10 clean. With a real gripper fault: 2/10 without the
-  supervisor, 7/10 with it.
-- SmolVLA v2 on the iGPU, same 10 seeds: ⟨x⟩/10 clean with the supervisor, ⟨y⟩/10 without it;
-  with the gripper fault ⟨z⟩/10 with the supervisor vs ⟨w⟩/10 without it.
-- Inference: ⟨a⟩ s per 50-action chunk on the iGPU vs ⟨b⟩ s in PyTorch on the CPU
-  (⟨c⟩× faster), max action difference ⟨d⟩ rad.
+## Technology & category tags
+Intel Physical AI Studio, OpenVINO, SO-101, Anomalib, MuJoCo, SmolVLA, LeRobot, Vision-Language-Action, Bimanual Manipulation, Intel iGPU
 
-*Honest limits.* Collision checks cover arm-to-arm contact only. Randomized item
-friction does not reach the jaw contacts. Simulation pauses during inference, so this
-is not real-time 20 Hz control.
+> Anomalib is on the organizers' required tag list, but **this project does not use
+> Anomalib**, so the write-up does not claim it. Add the tag only because the checklist
+> requires it.
 
-*Reproducibility.* The repository contains:
-- the pinned MuJoCo scene;
-- data generation, training, export, evaluation and benchmark code;
-- per-run manifests (code revision, arguments, package versions);
-- model contracts (joint order, cameras, rate, file hashes);
-- public dataset and model links;
-- 99 tests.
+## Cover image
+`docs/submission/cover.jpg`
 
-**Technology & category tags**
-MuJoCo · SmolVLA · LeRobot · Vision-Language-Action · Bimanual Manipulation · SO-101 · OpenVINO · Intel Physical AI Studio · Intel iGPU · NNCF · Imitation Learning · Robotics Simulation · Safety Supervisor · Python · Kaggle
+## Video presentation
+A screen recording of the working closed-loop pipeline on the Intel laptop:
+1. Show `results/smolvla_v2_sup-on_fault-glitch` and the terminal log of the learned
+   policy on the Intel iGPU.
+2. Play `artifacts/demo/episode_4_hero.mp4`: the learned policy with the gripper fault,
+   supervisor recovery, and the table set.
+3. Show the README results table.
 
-## 📸 Cover image and presentation
+## Slide presentation
+`docs/submission/rescuehands_slides.pdf`
 
-- **Cover image:** `docs/submission/cover.jpg` (1920×1080). A rendered frame of the
-  scripted teacher's in-air hand-off from the presentation camera.
-- **Video presentation (about 3 min):** storyboard in
-  `docs/presentation/submission-story-and-plan.md`. Footage:
-  - ⟨the 10 seeds of the supervised fault run of SmolVLA v2 on the iGPU⟩
-  - the showcase renders from `scripts/render_showcase.py`
-  - one benchmark table
-- **Slide presentation:** `docs/submission/rescuehands_slides.pdf` (10 slides: problem, task,
-  architecture, learned policy and data, safety, results, Intel optimization, limits,
-  reproducibility, links). ⟨Fill the v2 numbers in make_slides.py RESULTS and rebuild.⟩
+## Public GitHub repository
+https://github.com/Hamza-Atiq/rescuehandsAI
 
-## 💻 App hosting and repository
+## Demo application platform
+Hugging Face (model + dataset) and a simulation video. No live web app, because the
+policy must run on Intel hardware.
 
-- **Public GitHub repository:** https://github.com/Hamza-Atiq/rescuehandsAI (branch `dinner-table`)
-- **Demo application platform:** Hugging Face Hub. The model and dataset are public;
-  the demo itself is the recorded simulation video. No live web app, because the
-  policy must run on an Intel device.
-- **Application URL:** https://huggingface.co/ABDHAM/smolvla_rescuehands_v2
-  ⟨confirm it is public after the upload⟩. Dataset:
-  https://huggingface.co/datasets/ABDHAM/rescuehands_table_v2
+## Application URL
+https://huggingface.co/ABDHAM/smolvla_rescuehands_v2
