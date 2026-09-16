@@ -21,6 +21,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--dataset", required=True)
+    parser.add_argument("--dataset-root", help="local copy of the dataset, to avoid downloading it")
     parser.add_argument("--device", default="cuda")
     args = parser.parse_args()
 
@@ -52,7 +53,8 @@ def main():
     if not stats or any(shape != [JOINTS] for shape in stats.values()):
         problems.append(f"normalizer stats {stats}")
 
-    dataset = LeRobotDataset(args.dataset)
+    dataset = LeRobotDataset(args.dataset, root=args.dataset_root,
+                             **({"video_backend": "pyav"} if args.device == "cpu" else {}))
     names = dataset.meta.features["action"].get("names")
     report["joint_order"] = names
     if cfg.get("action_feature_names") not in (None, names):
