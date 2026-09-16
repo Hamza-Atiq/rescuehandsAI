@@ -1,0 +1,139 @@
+{
+  "seed": 9,
+  "policy": {
+    "name": "smolvla_openvino_gpu",
+    "backend": "openvino",
+    "device": "GPU",
+    "checkpoint": "models\\openvino\\v2_fp32",
+    "n_action_steps": 25,
+    "privileged_state": false,
+    "camera_slots": {
+      "camera1": "overhead",
+      "camera2": "left_wrist",
+      "camera3": "right_wrist"
+    },
+    "contract": {
+      "joint_order": [
+        "left_arm/shoulder_pan",
+        "left_arm/shoulder_lift",
+        "left_arm/elbow_flex",
+        "left_arm/wrist_flex",
+        "left_arm/wrist_roll",
+        "left_arm/gripper",
+        "right_arm/shoulder_pan",
+        "right_arm/shoulder_lift",
+        "right_arm/elbow_flex",
+        "right_arm/wrist_flex",
+        "right_arm/wrist_roll",
+        "right_arm/gripper"
+      ],
+      "cameras": {
+        "camera1": "overhead",
+        "camera2": "left_wrist",
+        "camera3": "right_wrist"
+      },
+      "action_units": "absolute joint position targets in radians",
+      "control_hz": 20.0,
+      "dataset": "ABDHAM/rescuehands_table_v2",
+      "dataset_revision": "v3.0",
+      "source": "/kaggle/working/rescuehandsAI/outputs/smolvla_rescuehands_v2/checkpoints/last/pretrained_model",
+      "files": {
+        "smolvla.xml": "22b6a927679f8b5f6d2e699e0a2e9b9d80597ff2839db69457e42e9a6cb24ded",
+        "smolvla.bin": "778f9b55dcc718fec5aaff4061a659181ef543a9bfa2ca97510fc2ab9044d92c",
+        "tokenizer.xml": "94e9bad47abeb549043b44a0cbc4f01c421c0a5c82366c839a1525c589ab0148",
+        "tokenizer.bin": "2956b6fd761e8491d2fb0b6e1d7d9d26c539f753774133518d4a13673017d4ee",
+        "manifest.json": "30854be5f68589a2461c3f65825123d5d753f8e9543a78fa9cdd9f1bf22543a6"
+      }
+    }
+  },
+  "instruction": "Pick up the fork and hand it to the left hand. Then move the cup to its spot by the plate.",
+  "supervisor": true,
+  "fault": "GripperGlitch",
+  "state": "FAILED",
+  "steps": 987,
+  "events": [
+    {
+      "label": "FAILED_GRASP",
+      "time": 15.050000000000953,
+      "item": "fork",
+      "arm": null
+    },
+    {
+      "label": "FAILED_GRASP",
+      "time": 32.19999999999802,
+      "item": "fork",
+      "arm": null
+    },
+    {
+      "label": "FAILED_GRASP",
+      "time": 49.350000000006794,
+      "item": "fork",
+      "arm": null
+    },
+    {
+      "label": "RECOVERY_EXHAUSTED",
+      "time": 49.350000000006794
+    }
+  ],
+  "recoveries": 2,
+  "clamped_joint_steps": 10,
+  "inference_calls": 39,
+  "inference_seconds": [
+    4.44498520000343,
+    4.273325800000748,
+    4.618940100001055,
+    4.396266999996442,
+    4.318894200005161,
+    4.399692599996342,
+    4.499403100002382,
+    3.96781049999845,
+    3.94160710000142,
+    4.347973399999319,
+    4.341288700001314,
+    4.330544999997073,
+    4.450737500003015,
+    4.380579700002272,
+    3.982317999994848,
+    3.9605032000035862,
+    4.471389300000737,
+    4.532323300001735,
+    4.0871823000052245,
+    4.565533900000446,
+    4.296437500001048,
+    4.259569300003932,
+    4.608395000002929,
+    4.18478970000433,
+    4.0844859999997425,
+    4.3345973000032245,
+    3.9944679999971413,
+    4.201898700004676,
+    3.9620871000006446,
+    4.265085799997905,
+    3.9978566999998293,
+    3.869817899998452,
+    3.8731660999983433,
+    4.073425500006124,
+    4.099543799995445,
+    3.942657000006875,
+    3.9579398999994737,
+    3.7859555999966688,
+    3.927945900002669
+  ],
+  "fault_step": null,
+  "max_steps": 1500,
+  "max_recoveries": 2,
+  "outcome": {
+    "success": false,
+    "cup_in_zone": false,
+    "utensil_in_zone": false,
+    "handoff": false,
+    "released": true,
+    "supported": true,
+    "cup_upright": true,
+    "settled": true,
+    "spare_utensil_in_place": false
+  },
+  "failure": "RECOVERY_EXHAUSTED",
+  "sim_seconds": 49.350000000006794,
+  "wall_seconds": 188.27
+}
