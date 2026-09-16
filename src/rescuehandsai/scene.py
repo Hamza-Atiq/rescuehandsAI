@@ -111,7 +111,44 @@ def _utensil_xml(item: str, params: SceneParams, config: dict) -> str:
     </body>"""
 
 
-def world_xml(params: SceneParams, config: dict) -> str:
+def look_at_xyaxes(pos, target, up=(0.0, 0.0, 1.0)) -> tuple:
+    """MuJoCo camera xyaxes for a camera at `pos` looking at `target` (the camera looks along -z)."""
+    forward = np.subtract(target, pos, dtype=float)
+    forward /= np.linalg.norm(forward)
+    x = np.cross(forward, up)
+    x /= np.linalg.norm(x)
+    y = np.cross(x, forward)
+    return (*x, *y)
+
+
+# Presentation only: never seen by the policy, never used for training data.
+SHOWCASE_CAMERAS = {  # name: (position, look-at point, vertical field of view); arms face +y
+    "hero": ((0.55, 0.82, 0.42), (0.0, 0.13, 0.05), 40),
+    "handoff": ((0.28, 0.50, 0.17), (0.06, 0.15, 0.07), 46),
+    "left_side": ((-0.68, 0.50, 0.32), (0.0, 0.16, 0.05), 40),
+    "wide": ((0.0, 1.05, 0.72), (0.0, 0.12, 0.0), 42),
+}
+
+
+def _showcase_xml():
+    """Sky, floor, a shadow-casting light and presentation cameras (no collisions, no bodies)."""
+    asset = """<asset>
+    <texture name="showcase_sky" type="skybox" builtin="gradient" rgb1="0.30 0.42 0.58" rgb2="0.05 0.07 0.10" width="512" height="512"/>
+    <texture name="showcase_floor" type="2d" builtin="checker" rgb1="0.23 0.32 0.42" rgb2="0.17 0.24 0.32" width="512" height="512" mark="edge" markrgb="0.75 0.78 0.82"/>
+    <material name="showcase_floor" texture="showcase_floor" texrepeat="12 12" reflectance="0.12"/>
+  </asset>"""
+    extras = ['<geom name="showcase_floor" type="plane" size="4 4 0.1" pos="0 0 -0.05" material="showcase_floor" '
+              'contype="0" conaffinity="0"/>',
+              '<light name="showcase_sun" pos="0.8 -0.9 1.8" dir="-0.8 0.9 -1.8" diffuse="0.55 0.55 0.52" '
+              'castshadow="true"/>']
+    for name, (pos, target, fovy) in SHOWCASE_CAMERAS.items():
+        extras.append(f'<camera name="showcase_{name}" pos="{_v(pos)}" '
+                      f'xyaxes="{" ".join(f"{v:.5f}" for v in look_at_xyaxes(pos, target))}" fovy="{fovy}"/>')
+    return asset, "".join(extras)
+
+
+def world_xml(params: SceneParams, config: dict, showcase: bool = False) -> str:
+    """The MJCF world. showcase=True adds presentation-only extras; the default output is unchanged."""
     tx, ty = config["table"]["center"]
     thx, thy = config["table"]["half_size"]
     plate, mat = config["plate"], config["mat"]
@@ -127,11 +164,16 @@ def world_xml(params: SceneParams, config: dict) -> str:
         for name, c in config["cameras"].items())
     lx, ly = params.light_offset
     d = params.light_diffuse
+    asset, off_w, off_h = "", 640, 480
+    if showcase:
+        asset, extras = _showcase_xml()
+        cameras += extras
+        off_w, off_h = 1920, 1080
     return f"""<mujoco model="rescuehands_dinner_table">
-  <compiler angle="radian"/>
+  <compiler angle="radian"/>{asset}
   <option integrator="implicitfast" timestep="0.005" cone="elliptic" impratio="10" iterations="10" ls_iterations="20"/>
   <visual>
-    <global offwidth="640" offheight="480"/>
+    <global offwidth="{off_w}" offheight="{off_h}"/>
     <headlight ambient="0.25 0.25 0.25" diffuse="0.2 0.2 0.2" specular="0 0 0"/>
   </visual>
   <worldbody>
@@ -161,14 +203,15 @@ def world_xml(params: SceneParams, config: dict) -> str:
 </mujoco>"""
 
 
-def build_model(params: SceneParams, config: dict | None = None, asset_path: Path | None = None):
+def build_model(params: SceneParams, config: dict | None = None, asset_path: Path | None = None,
+                showcase: bool = False):
     config = config or load_config()
     if asset_path is None:
         sim_cfg = json.loads((ROOT / "configs/simulation.json").read_text())
         asset_path = (ROOT / sim_cfg["asset_path"]).resolve()
     if not Path(asset_path).is_file():
         raise FileNotFoundError("SO-101 model missing. Follow the asset setup in README.md.")
-    spec = mujoco.MjSpec.from_string(world_xml(params, config))
+    spec = mujoco.MjSpec.from_string(world_xml(params, config, showcase=showcase))
     for arm in ARMS:
         mount = config["arms"][arm]
         yaw = mount["yaw"]
