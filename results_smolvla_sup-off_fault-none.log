@@ -1,9 +1,0 @@
-{"seed": 0, "state": "FAILED", "failure": "OBJECT_OUT_OF_BOUNDS", "recoveries": 0, "steps": 1331, "wall_s": 334.84}
-{"seed": 1, "state": "FAILED", "failure": "OBJECT_OUT_OF_BOUNDS", "recoveries": 0, "steps": 492, "wall_s": 105.71}
-{"seed": 2, "state": "FAILED", "failure": "TIMEOUT", "recoveries": 0, "steps": 1500, "wall_s": 309.08}
-{"seed": 3, "state": "FAILED", "failure": "TIMEOUT", "recoveries": 0, "steps": 1500, "wall_s": 348.24}
-{"seed": 4, "state": "SUCCEEDED", "failure": null, "recoveries": 0, "steps": 517, "wall_s": 133.62}
-{"seed": 5, "state": "FAILED", "failure": "OBJECT_OUT_OF_BOUNDS", "recoveries": 0, "steps": 1303, "wall_s": 336.02}
-{"seed": 6, "state": "FAILED", "failure": "TIMEOUT", "recoveries": 0, "steps": 1500, "wall_s": 403.79}
-{"seed": 7, "state": "FAILED", "failure": "OBJECT_OUT_OF_BOUNDS", "recoveries": 0, "steps": 653, "wall_s": 175.15}
-{"seed": 8, "state": "FAILED", "failure": "OBJECT_OUT_OF_BOUNDS", "recoveries": 0, "steps": 688, "wall_s": 186.04}
