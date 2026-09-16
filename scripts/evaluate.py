@@ -22,8 +22,9 @@ import numpy as np
 
 from rescuehandsai.perturb import GripperGlitch
 from rescuehandsai.randomize import perturb_start
-from rescuehandsai.runner import EpisodeRunner
+from rescuehandsai.runner import EpisodeLog, EpisodeRunner
 from rescuehandsai.scene import ROOT
+from rescuehandsai.showcase import scene_identity
 from rescuehandsai.sim import VIDEO_CAMERAS, MujocoSimulation
 from rescuehandsai.task import make_task
 
@@ -34,7 +35,7 @@ def seed_range(text):
 
 
 def git_revision():
-    out = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True, text=True)
+    out = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True, text=True, encoding="utf-8", errors="replace")
     return out.stdout.strip() or None
 
 
@@ -43,7 +44,7 @@ def source_state():
 
     A HEAD string alone cannot tell two runs apart when files were edited but not committed."""
     def git(*cmd):
-        return subprocess.run(["git", "-C", str(ROOT), *cmd], capture_output=True, text=True).stdout
+        return subprocess.run(["git", "-C", str(ROOT), *cmd], capture_output=True, text=True, encoding="utf-8", errors="replace").stdout
     changed = [line[3:] for line in git("status", "--porcelain", "--untracked-files=no").splitlines()]
     diff = git("diff", "HEAD")
     return {"git_revision": git_revision(), "dirty": bool(changed), "changed_files": changed,
@@ -110,15 +111,19 @@ class StateRecorder:
     any presentation camera."""
 
     def __init__(self, path: Path):
-        self.path, self.qpos, self.states = path, [], []
+        self.path, self.qpos, self.states, self.times = path, [], [], []
 
     def __call__(self, sim, state):
         self.qpos.append(sim.data.qpos.copy())
         self.states.append(state)
+        self.times.append(float(sim.data.time))
 
-    def close(self, seed: int, instruction: str, policy_name: str):
+    def close(self, seed: int, instruction: str, policy_name: str, sim):
+        # scene identity: a replay must rebuild exactly this scene, or refuse
         np.savez_compressed(self.path, qpos=np.array(self.qpos), runner_state=np.array(self.states),
-                            seed=seed, instruction=instruction, policy=policy_name)
+                            sim_time=np.array(self.times), seed=seed, instruction=instruction,
+                            policy=policy_name, control_dt=float(sim.config["control_dt"]),
+                            scene_sha256=scene_identity(sim))
 
 
 def chain(*hooks):
@@ -157,7 +162,12 @@ def main():
     sim = MujocoSimulation()
     policy = make_policy(args, sim)
     source = source_state()
+    if source["dirty"]:  # keep the actual uncommitted change, not only its hash
+        (out / "source.patch").write_text(subprocess.run(["git", "-C", str(ROOT), "diff", "HEAD"],
+                                                         capture_output=True, text=True, encoding="utf-8", errors="replace").stdout)
     manifest = {"run": name, "created_utc": stamp, "source": source,
+                "scene_config": sim.scene_config, "asset_path": str(sim.asset_path),
+                "asset_sha256": hashlib.sha256(Path(sim.asset_path).read_bytes()).hexdigest(),
                 "args": {k: (str(v) if isinstance(v, (Path, range)) else v) for k, v in vars(args).items()},
                 "seeds": list(args.seeds), "policy": policy.metadata(), "sim_config": sim.config,
                 "packages": package_versions(), "python": platform.python_version(),
@@ -175,11 +185,18 @@ def main():
                                if args.perturb else None)
         try:
             log = runner.run(task)
+        except Exception as exc:  # the episode fails and is recorded; the remaining seeds still run
+            log = EpisodeLog(seed, policy.metadata(), task.instruction, args.supervisor == "on",
+                             type(fault).__name__ if fault else None, state="FAILED",
+                             failure="SIMULATION_ERROR", max_steps=args.max_steps or 0)
+            log.events.append({"label": "SIMULATION_ERROR", "time": float(sim.data.time),
+                               "detail": f"episode aborted: {type(exc).__name__}: {exc}"})
+            log.sim_seconds = float(sim.data.time)
         finally:
             if video:
                 video.close()
             if states:
-                states.close(seed, task.instruction, str(policy.metadata().get("name")))
+                states.close(seed, task.instruction, str(policy.metadata().get("name")), sim)
         record = asdict(log)
         (out / f"episode_{seed}.json").write_text(json.dumps(record, indent=2, default=str))
         episodes.append(record)

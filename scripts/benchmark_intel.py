@@ -92,8 +92,10 @@ REFERENCE = "cpu_fp32"
 
 
 def ordered_variants(names):
-    """The accuracy reference runs first, whatever order was asked for, so every row can be compared."""
+    """The accuracy reference always runs, and first, so every row has an accuracy number."""
     names = [n for n in names if n]
+    if REFERENCE not in names:
+        names.append(REFERENCE)
     return sorted(names, key=lambda n: n != REFERENCE)
 
 
@@ -135,6 +137,8 @@ def main():
     out = args.out or ROOT / "results" / f"benchmark_{stamp}"
     out.mkdir(parents=True, exist_ok=True)
     core = ov.Core()
+    from rescuehandsai.contract import load_contract
+    contract = load_contract(args.export, verify=True)  # time only the exact artifact the contract vouches for
     manifest = json.loads((args.export / "manifest.json").read_text())
     features = [f.get("init_args", f) for f in manifest["model"].get("input_features", [])]
     feature_names = {f["name"] for f in features} or None
@@ -217,7 +221,7 @@ def main():
             rows.insert(0, {"variant": "cpu_pytorch", "error": f"{type(exc).__name__}: {exc}"[:500]})
 
     report = {
-        "created_utc": stamp, "export": str(args.export), "export_sha256": source_sha256,
+        "created_utc": stamp, "export": str(args.export), "export_sha256": source_sha256, "contract": contract,
         "int8_dir": str(int8_dir) if int8_dir else None, "int8_mode": INT8_MODE if int8_dir else None,
         "state_dims_model": state_dims, "state_truncated_for_model": truncated,
         "openvino": ov.__version__,

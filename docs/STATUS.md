@@ -24,7 +24,7 @@ job may have finished or failed since, so check it before acting.
 | Item | Status |
 |---|---|
 | Dataset v1 `ABDHAM/rescuehands_table` | 101 episodes, 57,173 frames |
-| Dataset v2 `ABDHAM/rescuehands_table_v2` | **569 episodes, 336,729 frames** (101 v1 + 192 clean + 194 messy starts + 82 drop-and-recover); checked on the Hub |
+| Dataset v2 `ABDHAM/rescuehands_table_v2` | **569 episodes, 336,729 frames** (101 v1 + 192 clean + 194 messy starts + 82 drop-and-recover); checked on the Hub; content commit `ca9e5592855c322446c3be87c2f1e6ef1ff29a32` (the running Kaggle verify writes only the tag `v3.0`, so cite this commit) |
 | Model v1 `ABDHAM/smolvla_rescuehands` | 12k steps; OpenVINO export in `models/openvino/fp32` with a contract |
 | v2 checkpoint backup `ABDHAM/smolvla_rescuehands_v2_checkpoints/002000` | Checked on the Hub; also downloaded to `models/_backup_v2_checkpoints/002000` (1.8 GB in 18.4 min) |
 
@@ -38,7 +38,7 @@ measured:
 - **Evaluations:** write `manifest.json` and a per-episode `summary.json`.
 - **Hand-off check:** the no-hands gap is bounded at 5 steps (measured teacher
   maximum: 1).
-- **Spare utensil check:** it must be untouched and still.
+- **Spare utensil check:** at the end it must have no gripper contact and be still (earlier contact is not tracked).
 - **Teacher:** fixed the last-attempt pickup bug.
 - **Recovery retreat:** is now watched for items leaving the table.
 - **Benchmark:** made fair.
@@ -108,12 +108,13 @@ kaggle_pipeline.py --stage train --steps 6000 --lr 5e-5 --warmup-steps 300 --sav
 | ~21:05–21:30 | **Kaggle: OpenVINO export** (new, untested there) | `!python training/kaggle_pipeline.py --hf-user ABDHAM --stage export --run-name smolvla_rescuehands_v2 --model-repo ABDHAM/smolvla_rescuehands_v2` → expect `export contract hashes OK` and `uploaded openvino_fp32/` |
 | ~21:30–21:40 | Laptop: fetch the export (~0.8 GB, ~8 min) | `bash scripts/deploy_learned.sh ABDHAM/smolvla_rescuehands_v2 v2 fetch-export` |
 | **Fallback** if the Kaggle export fails | Laptop download (18 min) + export (24 min) | `bash scripts/deploy_learned.sh ABDHAM/smolvla_rescuehands_v2 v2 download export` |
-| ~21:40 → | Laptop: 10-seed evaluations on the iGPU (~4–5 min per seed), most important first | `bash scripts/deploy_learned.sh ABDHAM/smolvla_rescuehands_v2 v2 eval`, which runs sup-on+glitch → sup-on+none → sup-off+none, all with `--save-states` |
+| ~21:40 → | Laptop: 10-seed evaluations on the iGPU (~4–5 min per seed), most important first | `bash scripts/deploy_learned.sh ABDHAM/smolvla_rescuehands_v2 v2 eval`, which runs sup-on+glitch → sup-off+glitch → sup-on+none → sup-off+none (matched pairs), all with `--save-states` |
 | in parallel | Laptop: full checkpoint download, needed for the PyTorch benchmark row | `bash scripts/deploy_learned.sh ABDHAM/smolvla_rescuehands_v2 v2 download` |
 | after evals | Intel benchmark on the v2 export | `bash scripts/deploy_learned.sh ABDHAM/smolvla_rescuehands_v2 v2 bench` (run on an idle laptop) |
 
 Before 23:30 there is time for about 18 learned episodes after the export arrives.
-All 30, plus the benchmark, fit only if the deadline is extended.
+All 40 (4 matched runs), plus the benchmark, fit only if the deadline is extended.
+The first two runs form the key recovery pair: same seeds and fault, supervisor on vs off.
 
 ---
 
