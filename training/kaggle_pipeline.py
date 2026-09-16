@@ -256,7 +256,9 @@ EXPORT_PACKAGES = ["physicalai-train[smolvla]==0.1.0", "physicalai==0.1.1", "ope
                    "openvino-tokenizers==2026.1.0.0", "nncf==3.3.0", "lerobot[dataset]==0.5.1",
                    "transformers==5.3.0", "torch==2.10.0", "torchvision==0.25.0", "mujoco==3.13.0",
                    "numpy==2.2.6", "onnx==1.22.0", "imageio", "psutil"]
-EXPORT_VENV = ROOT / ".venv-export"
+# Outside /kaggle/working: that folder is capped at ~20 GB and training checkpoints fill it
+# (the first attempt failed with "No space left on device"). /tmp is on Kaggle's larger disk.
+EXPORT_VENV = Path(os.environ.get("RESCUEHANDS_EXPORT_VENV", "/tmp/rescuehands-venv-export"))
 
 
 def export(hf_user: str, name: str | None = None, model_repo: str | None = None, push: bool = True):
@@ -269,10 +271,17 @@ def export(hf_user: str, name: str | None = None, model_repo: str | None = None,
     if not (checkpoint / "task_contract.json").is_file():
         raise SystemExit(f"{checkpoint} has no task_contract.json: run the train/verify stage first")
     out = ROOT / "outputs" / f"{name or run_name(True)}_openvino_fp32"
+    import shutil
+    for place in (EXPORT_VENV.parent, out.parent):
+        free_gb = shutil.disk_usage(place).free / 2**30
+        print(f"free disk at {place}: {free_gb:.1f} GB", flush=True)
+        if free_gb < 4:
+            raise SystemExit(f"only {free_gb:.1f} GB free at {place}; the export needs about 4 GB "
+                             "(delete old checkpoints that are backed up on the Hub)")
     py = EXPORT_VENV / "bin" / "python"
     if not py.exists():
         run(["uv", "venv", EXPORT_VENV, "--python", "3.12"])
-    run(["uv", "pip", "install", "--python", py, *EXPORT_PACKAGES])
+    run(["uv", "pip", "install", "--python", py, *EXPORT_PACKAGES], env={"UV_LINK_MODE": "copy"})
     if not (out / "task_contract.json").is_file():
         # CPU only: the export traces the model, which must not compete with or need the GPU
         run([py, ROOT / "scripts" / "export_openvino.py", "--checkpoint", checkpoint, "--out", out],
