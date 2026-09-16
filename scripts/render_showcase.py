@@ -23,6 +23,47 @@ from rescuehandsai.sim import MujocoSimulation
 from rescuehandsai.task import make_task
 
 
+def label_frame(frame, lines):
+    """Burn a small caption into a frame so a viewer knows who is driving the robot."""
+    from PIL import Image, ImageDraw, ImageFont
+    image = Image.fromarray(frame)
+    draw = ImageDraw.Draw(image, "RGBA")
+    try:
+        font = ImageFont.truetype("segoeui.ttf", max(14, frame.shape[0] // 34))
+    except OSError:
+        font = ImageFont.load_default()
+    height = (font.size + 8) * len(lines) + 12
+    draw.rectangle([0, 0, frame.shape[1], height], fill=(10, 14, 22, 185))
+    for i, (text, colour) in enumerate(lines):
+        draw.text((16, 8 + i * (font.size + 8)), text, font=font, fill=colour)
+    return np.asarray(image)
+
+
+def replay(args):
+    """Draw a saved evaluation (evaluate.py --save-states) from a presentation camera."""
+    import imageio.v2 as imageio
+    data = np.load(args.states)
+    seed, policy = int(data["seed"]), str(data["policy"])
+    sim = MujocoSimulation()
+    sim.reset(seed, instruction=str(data["instruction"]))
+    renderer = ShowcaseRenderer(args.width, args.height)
+    who = "learned policy (SmolVLA)" if "smolvla" in policy else "scripted teacher"
+    args.video.mkdir(parents=True, exist_ok=True)
+    for camera in args.cameras.split(","):
+        path = args.video / f"{args.states.stem.replace('_states', '')}_{camera}.mp4"
+        with imageio.get_writer(path, fps=20 // args.every, codec="libx264", quality=8, macro_block_size=1) as writer:
+            for i in range(0, len(data["qpos"]), args.every):
+                state = str(data["runner_state"][i])
+                colour = (255, 170, 60, 255) if state == "RECOVERING" else (120, 220, 160, 255)
+                frame = renderer.draw(sim, data["qpos"][i], camera)
+                writer.append_data(label_frame(frame, [
+                    (f"{who} · seed {seed} · t = {i * 0.05:4.1f} s sim · {state}", colour),
+                    (f"“{data['instruction']}”", (225, 232, 240, 255))]))
+        print("wrote", path, flush=True)
+    renderer.close()
+    sim.close()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--seed", type=int, default=1)
@@ -32,7 +73,13 @@ def main():
     parser.add_argument("--cameras", default="hero,handoff")
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=720)
+    parser.add_argument("--states", type=Path, help="replay a saved evaluation episode instead of running the teacher")
+    parser.add_argument("--every", type=int, default=2, help="with --states: draw every Nth control step")
     args = parser.parse_args()
+    if args.states:
+        if not args.video:
+            parser.error("--states needs --video <folder>")
+        return replay(args)
 
     sim = MujocoSimulation()
     task = make_task(args.seed)
