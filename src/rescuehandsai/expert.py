@@ -20,6 +20,10 @@ AIR_MARGIN = 0.008
 # pads, not just the tips, close around the handle.
 GRASP_DEPTH = 0.007
 TABLE_CLEARANCE = 0.0015
+# A grasp is judged by whether the utensil actually came up with the hand. Jaw
+# contacts flicker for single steps, so asking "is it held right now" wrongly
+# reported a miss on grasps that were in fact fine (it cost two of ten successes).
+LIFTED_HEIGHT = 0.025
 # Jaw directions for the utensil (the wrist camera sits on the +closing side). The
 # desired closing axis is the approach turned +90 degrees, so with these signs the
 # right camera faces the robot at hand-off and the left camera faces away.
@@ -143,6 +147,13 @@ class ScriptedExpert:
     # -- script ------------------------------------------------------------------
     def _script(self):
         yield Move({}, 4, "settle")
+        # An off-nominal start (a perturbed scene, or a re-plan after recovery) would
+        # otherwise begin mid-reach from an odd pose and sweep through the table.
+        # Returning home first is also what the supervisor does, so the learned policy
+        # sees one consistent habit: unsure -> go home -> start the task.
+        home = self._home("right_arm") | self._home("left_arm")
+        if max(abs(self.sim.previous[n] - home[n]) for n in home) > 0.05:
+            yield Move(home, 25, "home_start")
         for name in SUBTASKS:
             if name in self.subtasks:
                 self.subtask = name
@@ -189,22 +200,84 @@ class ScriptedExpert:
         # body-frame x of the two grasp points on the handle
         return {"end": -hx * s + 0.02, "neck": hx * s - 0.026, "half_width": hy, "half_height": hz}
 
-    def _pick_utensil(self):
-        arm, grip, item = "right_arm", "right_arm/gripper", self.task.utensil
+    def _stage_utensil(self):
+        """Left arm returns a utensil that fell on its side to where the right arm works.
+
+        The task needs the right hand to start the utensil and hand it over, but a
+        dropped utensil often lands on the left half of the table, out of the right
+        arm's range: without this, recovery dies with a planning error. The left hand
+        picks it up and sets it down at the hand-off spot, which both arms can reach,
+        and the normal sequence then continues from the beginning.
+        """
+        arm, grip, item = "left_arm", "left_arm/gripper", self.task.utensil
         g = self._handle_geometry(item)
         pos, axis = self._utensil_frame(item)
-        center = pos + g["end"] * axis
+        center = pos + g["neck"] * axis
         center[2] = max(TABLE_CLEARANCE, pos[2] - GRASP_DEPTH)
         q, q_lift, site, finger, pitch = self._grasp_with_clearance(
             arm, center, g["half_width"], 0.05, approach_xy=axis[:2], pitches=(1.3, 1.4, 1.2, 1.0),
-            margin=UTENSIL_MARGIN, closing_sign=RIGHT_SIGN)
-        self._right_pitch = pitch
-        q_pre = self._approach_pose(arm, site, finger, pitch, axis[:2], q, RIGHT_SIGN)
-        yield Move(q_pre | {grip: OPEN}, 25, "utensil_approach")
-        yield Move(q, 18, "utensil_reach")
-        yield Move({grip: CLOSE}, 12, "utensil_close")
-        yield Move({}, 4, "utensil_squeeze")
-        yield Move(q_lift, 18, "utensil_lift")
+            margin=UTENSIL_MARGIN, closing_sign=LEFT_SIGN)
+        q_pre = self._approach_pose(arm, site, finger, pitch, axis[:2], q, LEFT_SIGN)
+        yield Move(q_pre | {grip: OPEN}, 25, "stage_approach")
+        yield Move(q, 18, "stage_reach")
+        yield Move({grip: CLOSE}, 12, "stage_close")
+        yield Move({}, 4, "stage_squeeze")
+        yield Move(q_lift, 18, "stage_lift")
+        if compute_facts(self.sim).height[item] <= LIFTED_HEIGHT:
+            raise LostItemError(f"FAILED_GRASP: the left hand could not pick up the fallen {item}")
+        hand = np.asarray(self.sim.scene_config["handoff"]["right_grasp"], dtype=float)
+        target = np.array([hand[0], hand[1], g["half_height"] + 0.004])
+        approach = np.array([0.0, 1.0])
+        q_down, q_above, site_down, finger_d, pitch_d = self._grasp_with_clearance(
+            arm, target, g["half_width"], 0.05, approach_xy=approach,
+            pitches=(pitch, 1.3, 1.2, 1.4), q_init=q_lift, margin=UTENSIL_MARGIN, closing_sign=LEFT_SIGN)
+        yield Move(q_above, 35, "stage_carry")
+        yield Move(q_down, 18, "stage_lower")
+        yield Move({grip: OPEN}, 10, "stage_release")
+        yield Move(self._retreat_pose(arm, site_down, finger_d, pitch_d, approach, q_down, LEFT_SIGN),
+                   15, "stage_retreat")
+        yield Move(self._home(arm), 25, "stage_home")
+
+    def _pick_utensil(self, attempts: int = 3):
+        """Grasp the named utensil, checking the jaws really hold it before lifting.
+
+        A grasp planned from a measured pose can still miss when the utensil lies at
+        an unusual angle. Rather than carrying nothing to the hand-off, the teacher
+        opens, backs off, measures again and re-plans, and only then gives up. The
+        retries are recorded like any other motion, so demonstrations show what to do
+        after a miss instead of only showing flawless first attempts.
+        """
+        arm, grip, item = "right_arm", "right_arm/gripper", self.task.utensil
+        g = self._handle_geometry(item)
+        staged = False
+        for attempt in range(attempts):
+            pos, axis = self._utensil_frame(item)
+            center = pos + g["end"] * axis
+            center[2] = max(TABLE_CLEARANCE, pos[2] - GRASP_DEPTH)
+            try:
+                q, q_lift, site, finger, pitch = self._grasp_with_clearance(
+                    arm, center, g["half_width"], 0.05, approach_xy=axis[:2], pitches=(1.3, 1.4, 1.2, 1.0),
+                    margin=UTENSIL_MARGIN, closing_sign=RIGHT_SIGN)
+            except PlanningError:
+                if staged:  # already tried the other hand; this scene is out of range
+                    raise
+                staged = True
+                yield from self._stage_utensil()
+                continue
+            self._right_pitch = pitch
+            q_pre = self._approach_pose(arm, site, finger, pitch, axis[:2], q, RIGHT_SIGN)
+            yield Move(q_pre | {grip: OPEN}, 25, "utensil_approach")
+            yield Move(q, 18, "utensil_reach")
+            yield Move({grip: CLOSE}, 12, "utensil_close")
+            yield Move({}, 4, "utensil_squeeze")
+            yield Move(q_lift, 18, "utensil_lift")
+            if compute_facts(self.sim).height[item] > LIFTED_HEIGHT:
+                break
+            if attempt == attempts - 1:
+                raise LostItemError(f"FAILED_GRASP: the right hand could not grasp the {item}")
+            yield Move({grip: OPEN}, 8, "regrasp_open")
+            yield Move(q_pre, 15, "regrasp_back_off")
+            yield Move({}, 5, "regrasp_look")
         self._q_right = q_lift
 
     def _handoff(self):
@@ -225,8 +298,8 @@ class ScriptedExpert:
         # Plan the left grasp only if the right hand really still holds it. Otherwise the
         # utensil is lying somewhere on the table and this plan would reach into empty space
         # (or out of the left arm's range); ask for a recovery instead of crashing the episode.
-        if right not in compute_facts(self.sim).held_by[item]:
-            raise LostItemError(f"FAILED_GRASP: the right hand is not holding the {item} at the hand-off")
+        if compute_facts(self.sim).height[item] <= LIFTED_HEIGHT:
+            raise LostItemError(f"FAILED_GRASP: the {item} is not in the right hand at the hand-off")
         # Left grasp point comes from where the utensil really is now (physics may shift it).
         pos, axis = self._utensil_frame(item)
         center = pos + g["neck"] * axis

@@ -168,9 +168,15 @@ def main():
     if args.torch_checkpoint:
         try:
             import torch
+            from physicalai.data.observation import Observation
             from physicalai.policies.smolvla import SmolVLA
             policy = SmolVLA(pretrained_name_or_path=str(args.torch_checkpoint)).eval()
-            batch = {k: (torch.from_numpy(v) if isinstance(v, np.ndarray) else v) for k, v in inputs.items()}
+            # The Intel PyTorch policy takes its own Observation, not the flat dict the
+            # exported runtime accepts; Observation.to_dict() produces images.images.cameraN.
+            batch = Observation(
+                state=torch.from_numpy(inputs["state"]), task=list(inputs["task"]),
+                images={f"images.{slot}": torch.from_numpy(inputs[image_keys[CAMERA_SLOTS[slot]]])
+                        for slot in CAMERA_SLOTS})
 
             class TorchCall:
                 def __call__(self, _):

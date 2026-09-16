@@ -37,11 +37,10 @@ class PerturbTests(unittest.TestCase):
                 perturb_start(self.sim, seed)
                 facts = compute_facts(self.sim)
                 self.assertEqual(facts.out_of_bounds, set())
-                self.assertTrue(all(facts.supported[i] for i in SCENE_ITEMS))
+                self.assertIsNone(start_problems(facts, self.sim.scene_params))
 
     def test_a_clean_start_has_no_problems_but_a_lifted_cup_does(self):
         self.sim.reset(15)
-        self.sim.settle(5)  # contacts appear only after a physics step
         facts = compute_facts(self.sim)
         self.assertIsNone(start_problems(facts, self.sim.scene_params))
         position = list(facts.positions["cup"])

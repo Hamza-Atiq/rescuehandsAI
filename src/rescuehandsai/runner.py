@@ -73,13 +73,14 @@ class EpisodeLog:
 class EpisodeRunner:
     def __init__(self, sim, policy, *, supervisor: bool, fault=None, max_steps: int | None = None,
                  max_recoveries: int | None = None, settle_steps: int = 10, stall_seconds: float = 15.0,
-                 on_frame=None, on_command=None):
+                 on_frame=None, on_command=None, on_reset=None):
         """max_steps / max_recoveries default to the task's timeout_s / max_recoveries;
         explicit values are evaluation overrides and are recorded in the episode log."""
         self.sim, self.policy, self.supervisor = sim, policy, supervisor
         self.stall_seconds = stall_seconds
         self.fault, self.max_steps, self.max_recoveries = fault, max_steps, max_recoveries
         self.settle_steps, self.on_frame, self.on_command = settle_steps, on_frame, on_command
+        self.on_reset = on_reset  # edit the start state before the policy plans (evaluation only)
 
     # -- progress from physics (never from the policy's claims) -----------------
     @staticmethod
@@ -167,6 +168,8 @@ class EpisodeRunner:
     def run(self, task) -> EpisodeLog:
         sim, policy = self.sim, self.policy
         sim.reset(task.seed, instruction=task.instruction)
+        if self.on_reset:
+            self.on_reset(sim, task)
         policy.reset(sim, task)
         if self.fault is not None:
             self.fault.reset(task.seed)
