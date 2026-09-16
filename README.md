@@ -7,6 +7,16 @@ places the cup. A deterministic, physics-aware **supervisor** watches every
 control step. When an item really drops, it stops, moves both arms to safety
 and lets the policy try again, instead of blindly continuing.
 
+| In-air hand-off | Both grippers on the fork |
+| --- | --- |
+| ![Right arm hands the fork to the left arm above the table](docs/media/teacher_handoff_wide.jpg) | ![Close view of both grippers holding the fork during the hand-off](docs/media/teacher_handoff_close.jpg) |
+| **Gripper fault: the fork drops, the arms back off** | **Table set: fork left of the plate, cup right** |
+| ![The fork has fallen onto the mat and the right arm retreats before retrying](docs/media/teacher_drop_recovery.jpg) | ![Finished place setting with the fork and cup in their zones](docs/media/teacher_table_set.jpg) |
+
+<sub>Scripted demonstration teacher, seed 1, drawn with `scripts/render_showcase.py`
+(presentation cameras only; the policy's own cameras are unchanged). Learned-policy
+frames will be added from the final evaluation.</sub>
+
 > **Thesis:** a VLA should not be trusted just because it produced an action.
 > A useful bimanual system checks what physically happened and recovers safely.
 
