@@ -44,7 +44,9 @@ def main():
     actions = np.asarray(dataset.hf_dataset["action"], dtype=np.float32)
     starts = np.linspace(0, len(dataset) - 1, args.frames + 2)[1:-1].astype(int)
 
-    per_frame, horizon = [], None
+    # per step index: summed error and how many samples reached that index (samples near the
+    # end of an episode have fewer future steps, so indices are averaged separately)
+    per_frame, sums, counts = [], np.zeros(0), np.zeros(0)
     for start in starts:
         item = dataset[int(start)]
         same_episode = np.flatnonzero(episode_index == episode_index[start])
@@ -57,19 +59,23 @@ def main():
         chunk = np.asarray(model.predict_action_chunk(inputs)).reshape(-1, len(joints))
         steps = min(len(chunk), len(future))
         error = np.abs(chunk[:steps] - actions[future[:steps]]).mean(axis=1)
-        horizon = error if horizon is None else horizon[:steps] + error[:steps]
+        if steps == 0:
+            continue
+        if len(sums) < steps:
+            sums, counts = np.pad(sums, (0, steps - len(sums))), np.pad(counts, (0, steps - len(counts)))
+        sums[:steps] += error
+        counts[:steps] += 1
+        at = lambda i: round(float(error[i]), 4) if i < steps else None  # no guess past the real data
         per_frame.append({"frame": int(start), "episode": int(episode_index[start]),
                           "steps_compared": steps, "mean_abs_rad": round(float(error.mean()), 4),
-                          "error_at_0": round(float(error[0]), 4),
-                          "error_at_10": round(float(error[min(10, steps - 1)]), 4),
-                          "error_at_24": round(float(error[min(24, steps - 1)]), 4),
-                          "error_at_49": round(float(error[steps - 1]), 4)})
+                          "error_at_0": at(0), "error_at_10": at(10), "error_at_24": at(24), "error_at_49": at(49)})
         print(json.dumps(per_frame[-1]), flush=True)
 
-    mean_curve = (horizon / len(per_frame)).tolist()
+    mean_curve = (sums / np.maximum(counts, 1)).tolist()
     report = {"export": str(args.export), "device": args.device, "dataset": args.dataset,
               "frames": len(per_frame), "joints": joints,
               "mean_abs_rad_by_step": [round(float(v), 4) for v in mean_curve],
+              "samples_by_step": [int(c) for c in counts],
               "per_frame": per_frame,
               "note": "open-loop: the policy is scored against the teacher's own commands, "
                       "so this measures prediction drift inside one chunk, not task success."}

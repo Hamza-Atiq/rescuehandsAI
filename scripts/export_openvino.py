@@ -1,7 +1,7 @@
 """Export a fine-tuned SmolVLA checkpoint to OpenVINO with Intel Physical AI Studio.
 
   PYTHONPATH=src .venv-pai/Scripts/python.exe scripts/export_openvino.py \
-      --checkpoint <hf_user>/smolvla_rescuehands  (or a local pretrained_model folder) \
+      --checkpoint models/smolvla_rescuehands  (a local folder with task_contract.json; download Hub models first) \
       --out models/openvino/fp32
 
 The checkpoint must have been trained on our dataset: 12-D state and action with
