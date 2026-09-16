@@ -23,8 +23,8 @@ CARD = RGBColor(0x18, 0x24, 0x36)
 
 # Final learned-policy numbers: replace the placeholders once results/smolvla_v2_* exist.
 RESULTS = {
-    "v2_sup_on": "⟨x⟩/10", "v2_sup_off": "⟨y⟩/10", "v2_fault_sup_on": "⟨z⟩/10", "v2_fault_sup_off": "⟨w⟩/10",
-    "igpu_s": "⟨a⟩ s", "torch_s": "⟨b⟩ s", "speedup": "⟨c⟩×", "diff": "⟨d⟩ rad",
+    "v2_sup_on": "not run", "v2_sup_off": "not run", "v2_fault_sup_on": "1/10", "v2_fault_sup_off": "running",
+    "igpu_s": "4.53 s", "torch_s": "≈190 s (v1)", "speedup": "≈40×", "diff": "0.004 rad (v1)",
 }
 
 prs = Presentation()
@@ -210,9 +210,9 @@ text(s, "Pairs change one thing: same seeds and fault, supervisor on vs off. For
 s = slide("Running the policy on an Intel laptop", "INTEL OPTIMIZATION")
 table(s, [["Backend (Intel Core i5-6300U + HD Graphics 520)", "Time per 50-action chunk", "Max action diff vs FP32"],
           ["PyTorch, CPU (baseline)", RESULTS["torch_s"], RESULTS["diff"]],
-          ["OpenVINO FP32, CPU", "⟨e⟩ s", "0 (reference)"],
+          ["OpenVINO FP32, CPU", "13.9 s (v1)", "0 (reference)"],
           ["OpenVINO FP16, iGPU", RESULTS["igpu_s"], RESULTS["diff"]],
-          ["OpenVINO INT8 weights (NNCF)", "⟨f⟩ s", "⟨g⟩ rad"]],
+          ["OpenVINO INT8 weights (NNCF)", "not measured", "—"]],
       0.6, 1.9, [6.2, 3.0, 3.0], 16)
 bullets(s, [f"iGPU speed-up over PyTorch CPU: {RESULTS['speedup']}, with its accuracy cost reported next to it",
             "Exported with Intel Physical AI Studio; organizers allowed non-Core-Ultra Intel hardware",
