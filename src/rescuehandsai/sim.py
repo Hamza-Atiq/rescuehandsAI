@@ -16,6 +16,12 @@ ARMS = ("left_arm", "right_arm")
 POLICY_CAMERAS = {"overhead": "overhead", "left_wrist": "left_arm/wrist_cam",
                   "right_wrist": "right_arm/wrist_cam"}
 VIDEO_CAMERAS = {"front": "front"}
+# Mesa software rasterisers: EGL silently falls back to these when no GPU EGL driver exists.
+SOFTWARE_RENDERERS = ("llvmpipe", "softpipe", "swrast")
+
+
+def is_software_renderer(name: str) -> bool:
+    return any(tag in name.lower() for tag in SOFTWARE_RENDERERS)
 
 
 class MujocoSimulation:
@@ -134,6 +140,15 @@ class MujocoSimulation:
             renderer.scene.flags[mujoco.mjtRndFlag.mjRND_SHADOW] = bool(self.config["render_shadows"])
             frames[out_name] = renderer.render().copy()
         return frames
+
+    def gl_renderer(self) -> str:
+        """Name of the OpenGL device that draws camera images (renders once; no physics step)."""
+        self.render(POLICY_CAMERAS)  # makes the offscreen GL context current
+        try:
+            from OpenGL import GL
+            return GL.glGetString(GL.GL_RENDERER).decode(errors="replace")
+        except Exception as exc:  # PyOpenGL missing or context not queryable
+            return f"unknown ({type(exc).__name__})"
 
     def observe(self, *, images=False):
         frames = self.render(POLICY_CAMERAS) if images else {}

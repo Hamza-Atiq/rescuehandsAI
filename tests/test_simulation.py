@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 
 from rescuehandsai.contracts import BimanualAction
-from rescuehandsai.sim import MujocoSimulation, POLICY_CAMERAS, VIDEO_CAMERAS
+from rescuehandsai.sim import MujocoSimulation, POLICY_CAMERAS, VIDEO_CAMERAS, is_software_renderer
 
 
 class SimulationTests(unittest.TestCase):
@@ -21,6 +21,12 @@ class SimulationTests(unittest.TestCase):
     def hold(self, steps):
         for _ in range(steps):
             self.sim.step(BimanualAction(self.sim.observe().timestamp, self.sim.home_targets))
+
+    def test_software_renderers_are_recognised(self):
+        self.assertTrue(is_software_renderer("llvmpipe (LLVM 15.0.7, 256 bits)"))
+        self.assertTrue(is_software_renderer("softpipe"))
+        self.assertFalse(is_software_renderer("Tesla T4/PCIe/SSE2"))
+        self.assertFalse(is_software_renderer("Intel(R) HD Graphics 520"))
 
     def test_reset_repeats_scene_and_robot_state(self):
         before = self.sim.observe()

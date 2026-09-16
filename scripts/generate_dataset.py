@@ -21,7 +21,7 @@ class SkipEpisode(Exception):
     """The starting state itself is not a valid table, so the attempt is not a demonstration."""
 from rescuehandsai.expert import ScriptedExpert
 from rescuehandsai.recorder import EpisodeRecorder
-from rescuehandsai.sim import MujocoSimulation
+from rescuehandsai.sim import MujocoSimulation, is_software_renderer
 from rescuehandsai.task import make_task
 
 EVAL_SEEDS = range(0, 10)
@@ -43,6 +43,7 @@ def main():
                         help="start from an off-nominal state (arms nudged, items shifted and spun)")
     parser.add_argument("--perturb-scale", type=float, default=0.6,
                         help="largest perturbation, 0-1; measured teacher success: 1.0 -> 35%%, 0.6 -> see README")
+    parser.add_argument("--allow-cpu-render", action="store_true", help="run even if images are drawn on the CPU")
     args = parser.parse_args()
     if set(args.seeds) & set(EVAL_SEEDS):
         parser.error("seeds 0-9 are reserved for evaluation")
@@ -50,6 +51,11 @@ def main():
         parser.error(f"{args.root} already exists; choose a new shard directory")
 
     sim = MujocoSimulation()
+    renderer = sim.gl_renderer()
+    print(json.dumps({"gl_renderer": renderer}), flush=True)
+    if is_software_renderer(renderer) and not args.allow_cpu_render:
+        parser.error(f"camera images would be drawn on the CPU ({renderer}), ~4 min per episode; "
+                     "on Kaggle run training/kaggle_gpu_render.sh first, or pass --allow-cpu-render")
     recorder = EpisodeRecorder(args.root, args.repo_id, sim.names, sim.config["height"],
                                sim.config["width"], vcodec=args.vcodec)
     log_path = args.root.parent / f"{args.root.name}_attempts.jsonl"
