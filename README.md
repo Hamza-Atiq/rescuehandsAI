@@ -153,7 +153,7 @@ git clone --filter=blob:none --sparse https://github.com/google-deepmind/mujoco_
 git -C .cache/menagerie sparse-checkout set robotstudio_so101
 git -C .cache/menagerie checkout 8161bba264d7fa7c99ca301e91e7fb44737676ad
 
-# 3. tests (50+ unit and physics tests)
+# 3. tests (99 unit and physics tests)
 .venv-sim/Scripts/python.exe -m unittest discover -s tests -v
 
 # 4. watch the teacher live, with a dropped utensil and recovery
@@ -168,10 +168,15 @@ uv pip install --python .venv-pai/Scripts/python.exe --extra-index-url https://d
   "physicalai-train[smolvla,cpu]==0.1.0" "lerobot[dataset]==0.5.1" "transformers==5.3.0" nncf mujoco==3.13.0 imageio psutil
 
 # 7. data + training on a Kaggle GPU notebook (Internet on, HF_TOKEN secret)
-python training/kaggle_pipeline.py --hf-user <you> --episodes 120 --steps 12000
+python training/kaggle_pipeline.py --hf-user <you> --stage setup
+bash training/kaggle_gpu_render.sh          # draw camera images on the GPU, not the CPU
+python training/kaggle_pipeline.py --hf-user <you> --stage data --episodes 200 --perturbed-episodes 200 --recovery-episodes 100
+python training/kaggle_pipeline.py --hf-user <you> --stage train --steps 12000   # verifies and uploads task_contract.json
 
-# 8. export to OpenVINO, evaluate on the iGPU, benchmark
-PYTHONPATH=src .venv-pai/Scripts/python.exe scripts/export_openvino.py --checkpoint <you>/smolvla_rescuehands --out models/openvino/fp32
+# 8. download (contract hash check), export to OpenVINO, evaluate on the iGPU, benchmark
+bash scripts/deploy_learned.sh <you>/smolvla_rescuehands_v2 v2 download export eval bench
+# or step by step:
+PYTHONPATH=src .venv-pai/Scripts/python.exe scripts/export_openvino.py --checkpoint models/smolvla_rescuehands --out models/openvino/fp32
 PYTHONPATH=src .venv-pai/Scripts/python.exe scripts/evaluate.py --policy smolvla --export models/openvino/fp32 --device GPU --seeds 0:10 --supervisor on --fault glitch --video
 PYTHONPATH=src .venv-pai/Scripts/python.exe scripts/benchmark_intel.py --export models/openvino/fp32
 ```
@@ -191,8 +196,15 @@ PYTHONPATH=src .venv-pai/Scripts/python.exe scripts/benchmark_intel.py --export 
 | `src/rescuehandsai/recorder.py`, `scripts/generate_dataset.py` | LeRobot dataset recording (successful episodes only) |
 | `src/rescuehandsai/policies/` | Scripted and exported-SmolVLA policies behind one contract |
 | `training/kaggle_pipeline.py` | GPU data generation and SmolVLA fine-tuning |
-| `scripts/evaluate.py`, `scripts/benchmark_intel.py` | Seeded evaluation with videos; Intel benchmark |
-| `docs/` | Research review, design spec, plan, OpenVINO spike findings |
+| `src/rescuehandsai/contract.py` | Model contract: joint order, cameras, units, rate and file hashes travel with the model |
+| `src/rescuehandsai/showcase.py`, `scripts/render_showcase.py` | Presentation renders from nicer cameras (policy cameras untouched) |
+| `scripts/evaluate.py`, `scripts/benchmark_intel.py` | Seeded evaluation (manifest + per-episode summary, optional video); Intel benchmark |
+| `scripts/deploy_learned.sh`, `scripts/export_openvino.py` | Laptop deployment: download, contract check, OpenVINO export, evaluations |
+| `scripts/review_*.py`, `scripts/spike_*.py` | Dated one-off probes from reviews and the OpenVINO spike (kept for traceability) |
+| `results/audit_final_*`, `results/smolvla_*` | Committed evidence behind the README numbers |
+| `docs/research/` | Independent reviews and audits (dated history) |
+| `docs/superpowers/` | Design spec and implementation plans |
+| `docs/media/` | README images |
 
 ## Design notes learned by measurement
 
