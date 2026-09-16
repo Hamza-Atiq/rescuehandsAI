@@ -250,6 +250,47 @@ def verify(hf_user: str, push: bool, dataset_repo: str | None = None, name: str 
         run([PY, "-c", code], env={"HF_TOKEN": hf_token()})
 
 
+# The exact versions the laptop export (models/openvino/fp32) was made with, so a Kaggle
+# export matches what the laptop runtime (.venv-pai) loads.
+EXPORT_PACKAGES = ["physicalai-train[smolvla]==0.1.0", "physicalai==0.1.1", "openvino==2026.1.0",
+                   "openvino-tokenizers==2026.1.0.0", "nncf==3.3.0", "lerobot[dataset]==0.5.1",
+                   "transformers==5.3.0", "torch==2.10.0", "torchvision==0.25.0", "mujoco==3.13.0",
+                   "numpy==2.2.6", "onnx==1.22.0", "imageio", "psutil"]
+EXPORT_VENV = ROOT / ".venv-export"
+
+
+def export(hf_user: str, name: str | None = None, model_repo: str | None = None, push: bool = True):
+    """OpenVINO export of the verified checkpoint on Kaggle's CPU, uploaded next to the model.
+
+    Run only after training has finished (the export needs a lot of memory). The laptop
+    then downloads `openvino_fp32/` (about 0.8 GB) instead of the 1.8 GB checkpoint plus a
+    ~25 min export. OpenVINO IR files are device-independent; the contract travels along."""
+    checkpoint = ROOT / "outputs" / (name or run_name(True)) / "checkpoints" / "last" / "pretrained_model"
+    if not (checkpoint / "task_contract.json").is_file():
+        raise SystemExit(f"{checkpoint} has no task_contract.json: run the train/verify stage first")
+    out = ROOT / "outputs" / f"{name or run_name(True)}_openvino_fp32"
+    py = EXPORT_VENV / "bin" / "python"
+    if not py.exists():
+        run(["uv", "venv", EXPORT_VENV, "--python", "3.12"])
+    run(["uv", "pip", "install", "--python", py, *EXPORT_PACKAGES])
+    if not (out / "task_contract.json").is_file():
+        # CPU only: the export traces the model, which must not compete with or need the GPU
+        run([py, ROOT / "scripts" / "export_openvino.py", "--checkpoint", checkpoint, "--out", out],
+            env={"PYTHONPATH": str(ROOT / "src"), "CUDA_VISIBLE_DEVICES": ""})
+    code = ("from pathlib import Path\n"
+            "from rescuehandsai.contract import load_contract\n"
+            f"c = load_contract(Path({str(out)!r}), verify=True)\n"
+            "print('export contract hashes OK:', sorted(c['files']))\n")
+    run([py, "-c", code], env={"PYTHONPATH": str(ROOT / "src")})
+    if push:
+        repo = model_repo or f"{hf_user}/smolvla_rescuehands"
+        code = ("from huggingface_hub import upload_folder\n"
+                f"upload_folder(folder_path={str(out)!r}, path_in_repo='openvino_fp32', repo_id={repo!r},"
+                " repo_type='model', commit_message='Add OpenVINO FP32 export with its task contract')\n"
+                f"print('uploaded openvino_fp32/ to', {repo!r})\n")
+        run([PY, "-c", code], env={"HF_TOKEN": hf_token()})
+
+
 def probe(hf_user: str, batch_size: int):
     """Time a few steps per precision on one GPU, without checkpoints or hub pushes."""
     import re
@@ -280,7 +321,7 @@ def probe(hf_user: str, batch_size: int):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--hf-user", required=True)
-    parser.add_argument("--stage", choices=["setup", "data", "provenance", "probe", "train", "verify", "all"], default="all")
+    parser.add_argument("--stage", choices=["setup", "data", "provenance", "probe", "train", "verify", "export", "all"], default="all")
     parser.add_argument("--episodes", type=int, default=120, help="clean demonstrations to keep")
     parser.add_argument("--recovery-episodes", type=int, default=0,
                         help="demonstrations with an injected drop and the teacher's recovery")
@@ -332,6 +373,8 @@ def main():
               args.precision, args.gpus, args.num_workers, name=args.run_name,
               init_from=args.init_from, dataset_repo=dataset_repo, model_repo=args.model_repo, lr=args.lr,
               warmup_steps=args.warmup_steps)
+    if args.stage == "export":
+        export(args.hf_user, args.run_name, args.model_repo, push=not args.no_push)
     if args.stage in ("train", "verify", "all"):
         verify(args.hf_user, not args.no_push, dataset_repo, args.run_name, args.model_repo)
 

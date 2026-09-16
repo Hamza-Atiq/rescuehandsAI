@@ -5,6 +5,7 @@
 #   bash scripts/deploy_learned.sh ABDHAM/smolvla_rescuehands_v2 v2 download export eval
 #
 # Stages (each is skipped when its output already exists, and stops on the first failure):
+#   fetch-export  models/openvino/<name>_fp32 from <repo>/openvino_fp32 (made by kaggle_pipeline.py --stage export)
 #   download  models/smolvla_rescuehands_<name>   (needs task_contract.json uploaded by the Kaggle verify stage)
 #   export    models/openvino/<name>_fp32         (export_openvino checks every contract hash first)
 #   eval      results/smolvla_<name>_sup-{on,off}_fault-{none,glitch} on seeds 0-9, iGPU
@@ -27,6 +28,16 @@ for stage in $stages; do
       $PY -c "from huggingface_hub import snapshot_download; snapshot_download('$repo', local_dir='$ckpt')"
       [ -f "$ckpt/task_contract.json" ] || { log "download: $repo has no task_contract.json (did the Kaggle verify stage upload it?)"; exit 1; }
       $PY -c "from pathlib import Path; from rescuehandsai.contract import load_contract; c = load_contract(Path('$ckpt'), verify=True); print('contract hashes OK:', sorted(c['files']), 'dataset', c['dataset'])"
+      ;;
+    fetch-export)
+      # the export made on Kaggle (kaggle_pipeline.py --stage export): ~0.8 GB, no local export needed
+      if [ -f "$export_dir/task_contract.json" ]; then log "fetch-export: $export_dir exists"; continue; fi
+      log "fetch-export: $repo/openvino_fp32 -> $export_dir"
+      $PY -c "from huggingface_hub import snapshot_download; snapshot_download('$repo', allow_patterns=['openvino_fp32/*'], local_dir='models/_fetch_$name')"
+      [ -f "models/_fetch_$name/openvino_fp32/task_contract.json" ] || { log "fetch-export: no openvino_fp32/task_contract.json in $repo"; exit 1; }
+      mkdir -p "$(dirname "$export_dir")"
+      mv "models/_fetch_$name/openvino_fp32" "$export_dir"
+      $PY -c "from pathlib import Path; from rescuehandsai.contract import load_contract; c = load_contract(Path('$export_dir'), verify=True); print('export contract hashes OK:', sorted(c['files']))"
       ;;
     export)
       if [ -f "$export_dir/task_contract.json" ]; then log "export: $export_dir exists"; continue; fi
