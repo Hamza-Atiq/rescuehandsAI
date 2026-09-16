@@ -150,6 +150,30 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual((log.state, log.failure, log.recoveries), ("FAILED", "POLICY_ERROR", 1))
         self.assertIn("planning failed after recovery", log.events[-1]["detail"])
 
+    def test_item_leaving_the_table_during_recovery_ends_the_episode(self):
+        from dataclasses import replace
+        from unittest.mock import patch
+        from rescuehandsai import runner as runner_module
+        real = runner_module.compute_facts
+        recovering = {"on": False}
+
+        def facts_with_cup_gone(sim):
+            facts = real(sim)
+            return replace(facts, out_of_bounds={"cup"}) if recovering["on"] else facts
+
+        original_safe_pose = EpisodeRunner._safe_pose
+
+        def watched_safe_pose(runner_self, log, task):
+            recovering["on"] = True
+            return original_safe_pose(runner_self, log, task)
+
+        with patch.object(runner_module, "compute_facts", side_effect=facts_with_cup_gone), \
+                patch.object(EpisodeRunner, "_safe_pose", watched_safe_pose):
+            log = EpisodeRunner(self.sim, IdlePolicy(), supervisor=True, stall_seconds=0.5,
+                                max_steps=400).run(make_task(0))
+        self.assertEqual((log.state, log.failure, log.recoveries), ("FAILED", "OBJECT_OUT_OF_BOUNDS", 1))
+        self.assertIn("during recovery", log.events[-1]["detail"])
+
     def test_supervisor_recovers_from_gripper_glitch(self):
         task = make_task(1)
         failed = EpisodeRunner(self.sim, ScriptedPolicy(), supervisor=False, fault=GripperGlitch(),
