@@ -63,6 +63,10 @@ def setup():
 
 
 SIM_ENV = {"MUJOCO_GL": "egl", "PYOPENGL_PLATFORM": "egl", "PYTHONPATH": str(ROOT / "src")}
+NVEGL = ROOT / ".cache" / "nvegl"  # written by training/kaggle_gpu_render.sh
+if (NVEGL / "10_nvidia.json").is_file():  # draw on the T4; without it EGL renders on the CPU
+    SIM_ENV["__EGL_VENDOR_LIBRARY_FILENAMES"] = str(NVEGL / "10_nvidia.json")
+    SIM_ENV["LD_LIBRARY_PATH"] = f"{NVEGL}:{os.environ.get('LD_LIBRARY_PATH', '')}"
 
 
 def shard_run(script: str, roots_and_seeds, tag: str, repo: str, extra=()):
