@@ -20,7 +20,8 @@ from pathlib import Path
 
 import numpy as np
 
-from rescuehandsai.policies.smolvla_exported import CAMERA_SLOTS, to_chw_float
+from rescuehandsai.contract import CAMERA_SLOTS
+from rescuehandsai.policies.smolvla_exported import to_chw_float
 from rescuehandsai.scene import ROOT
 from rescuehandsai.sim import MujocoSimulation
 from rescuehandsai.task import make_task
@@ -59,13 +60,15 @@ def native_chunk(checkpoint: Path, obs, names):
 
 def studio_chunk(checkpoint: Path, obs, names):
     import torch
+    from physicalai.data.observation import Observation
     from physicalai.policies.smolvla import SmolVLA
 
     policy = SmolVLA(pretrained_name_or_path=str(checkpoint)).eval()
-    batch = {"state": torch.tensor([[obs.positions[n] for n in names]], dtype=torch.float32),
-             "task": [obs.instruction]}
-    for camera, key in CAMERA_KEYS.items():
-        batch[key] = torch.from_numpy(to_chw_float(obs.images[camera]))
+    # Observation.to_dict() flattens to the exported input names, e.g. images.images.camera1
+    images = {f"images.{slot}": torch.from_numpy(to_chw_float(obs.images[camera]))
+              for slot, camera in CAMERA_SLOTS.items()}
+    batch = Observation(state=torch.tensor([[obs.positions[n] for n in names]], dtype=torch.float32),
+                        task=[obs.instruction], images=images)
     started = time.perf_counter()
     with torch.inference_mode():
         chunk = policy.predict_action_chunk(batch)

@@ -33,6 +33,8 @@ class HandoffTracker:
         if self.done:
             return True
         held, airborne = facts.held_by[self.item], not facts.supported[self.item]
+        if self.stage == "shared" and not airborne:
+            self.stage = "none"  # it is resting again: the in-air transfer was not completed
         if held == {"right_arm"}:
             self.stage = "right"
         elif held == {"left_arm", "right_arm"} and airborne and self.stage in ("right", "shared"):

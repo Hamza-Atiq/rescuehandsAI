@@ -62,46 +62,84 @@ def setup():
     run(["nvidia-smi"])
 
 
-def data(hf_user: str, episodes: int, shards: int, first_seed: int):
-    env = {"MUJOCO_GL": "egl", "PYOPENGL_PLATFORM": "egl", "PYTHONPATH": str(ROOT / "src")}
-    repo = f"{hf_user}/rescuehands_table"
-    per = -(-int(episodes * 1.3) // shards)  # ~20% of teacher attempts fail and are skipped
+SIM_ENV = {"MUJOCO_GL": "egl", "PYOPENGL_PLATFORM": "egl", "PYTHONPATH": str(ROOT / "src")}
+
+
+def shard_run(script: str, roots_and_seeds, tag: str, repo: str):
+    """Run one generator per shard in parallel; every shard writes its own log."""
     procs = []
-    for i in range(shards):
-        start = first_seed + i * per
-        cmd = [PY, "scripts/generate_dataset.py", "--root", f"data/shard{i}", "--repo-id", repo,
-               "--seeds", f"{start}:{start + per}"]
-        log = open(ROOT / f"data_shard{i}.log", "w")
-        procs.append(subprocess.Popen(list(map(str, cmd)), cwd=ROOT, env={**os.environ, **env},
-                                      stdout=log, stderr=subprocess.STDOUT))
-    codes = [p.wait() for p in procs]
+    for root, (start, stop) in roots_and_seeds:
+        cmd = [PY, script, "--root", root, "--repo-id", repo, "--seeds", f"{start}:{stop}"]
+        log = open(ROOT / f"{Path(root).name}.log", "w")
+        procs.append(subprocess.Popen(list(map(str, cmd)), cwd=ROOT,
+                                      env={**os.environ, **SIM_ENV}, stdout=log, stderr=subprocess.STDOUT))
+    codes = [proc.wait() for proc in procs]
     if any(codes):
-        raise SystemExit(f"shard failures: {codes}; see data_shard*.log")
-    merge = (
+        raise SystemExit(f"{tag} shard failures: {codes}; see {tag}*.log")
+
+
+def merge_and_push(repo: str, roots, out_root: Path):
+    code = (
         "from lerobot.datasets.aggregate import aggregate_datasets\n"
-        f"aggregate_datasets(repo_ids=[{', '.join(repr(repo) for _ in range(shards))}],"
-        f" roots=[{', '.join(repr(str(ROOT / f'data/shard{i}')) for i in range(shards))}],"
-        f" aggr_repo_id={repo!r}, aggr_root={str(ROOT / 'data/merged')!r})\n"
         "from lerobot.datasets.lerobot_dataset import LeRobotDataset\n"
-        f"ds = LeRobotDataset({repo!r}, root={str(ROOT / 'data/merged')!r})\n"
+        f"roots = {[str(r) for r in roots]!r}\n"
+        f"aggregate_datasets(repo_ids=[{repo!r}] * len(roots), roots=roots,"
+        f" aggr_repo_id={repo!r}, aggr_root={str(out_root)!r})\n"
+        f"ds = LeRobotDataset({repo!r}, root={str(out_root)!r})\n"
         "print('episodes', ds.num_episodes, 'frames', ds.num_frames)\n"
         "ds.push_to_hub(private=False)\n"
     )
-    run([PY, "-c", merge], env={"HF_TOKEN": hf_token()})
+    run([PY, "-c", code], env={"HF_TOKEN": hf_token()})
+
+
+def data(hf_user: str, episodes: int, shards: int, first_seed: int, recovery_episodes: int = 0,
+         repo_name: str = "rescuehands_table", base_dataset: str | None = None):
+    """Generate clean demonstrations, optionally recovery demonstrations, and push the merge.
+
+    Recovery episodes contain an injected gripper fault, the supervisor's stop-and-retreat
+    and the teacher's second attempt, so the learned policy sees how to get back on track
+    instead of only flawless trajectories. `base_dataset` is an existing Hub dataset
+    (e.g. the first clean run) that is downloaded and merged in as well.
+    """
+    repo = f"{hf_user}/{repo_name}"
+    roots = []
+    per = -(-int(episodes * 1.3) // shards) if episodes else 0  # ~20-30% of attempts are discarded
+    if episodes:
+        clean = [(f"data/clean{i}", (first_seed + i * per, first_seed + (i + 1) * per)) for i in range(shards)]
+        shard_run("scripts/generate_dataset.py", clean, "data_clean", repo)
+        roots += [ROOT / root for root, _ in clean]
+    if recovery_episodes:
+        per_rec = -(-int(recovery_episodes * 1.6) // shards)  # recovery attempts fail more often
+        start = first_seed + 100000
+        rec = [(f"data/recovery{i}", (start + i * per_rec, start + (i + 1) * per_rec)) for i in range(shards)]
+        shard_run("scripts/generate_recovery_dataset.py", rec, "data_recovery", repo)
+        roots += [ROOT / root for root, _ in rec]
+    if base_dataset:
+        base_root = ROOT / "data" / "base_download"
+        code = ("from lerobot.datasets.lerobot_dataset import LeRobotDataset\n"
+                f"ds = LeRobotDataset({base_dataset!r}, root={str(base_root)!r})\n"
+                "print('base episodes', ds.num_episodes)\n")
+        run([PY, "-c", code], env={"HF_TOKEN": hf_token()})
+        roots.append(base_root)
+    merge_and_push(repo, roots, ROOT / "data" / "merged")
 
 
 def train(hf_user: str, steps: int, batch_size: int, save_freq: int, push: bool,
           precision: str = "fp16", gpus: int = 1, num_workers: int = 4, name: str | None = None,
-          log_freq: int = 100, save: bool = True, stdout=None):
+          log_freq: int = 100, save: bool = True, stdout=None, init_from: str = "lerobot/smolvla_base",
+          dataset_repo: str | None = None, model_repo: str | None = None, lr: float | None = None):
     """precision: bf16 = SmolVLA default weights; fp32 = float32 weights;
-    fp16 = float32 weights with fp16 autocast (T4 has fast fp16 kernels, no bf16)."""
-    repo = f"{hf_user}/rescuehands_table"
+    fp16 = float32 weights with fp16 autocast (T4 has fast fp16 kernels, no bf16).
+
+    init_from is the starting policy: the SmolVLA base, or one of our own checkpoints
+    when fine-tuning further on a larger or recovery-augmented dataset."""
+    repo = dataset_repo or f"{hf_user}/rescuehands_table"
     name = name or run_name(push)
     out = ROOT / "outputs" / name
     if not push:  # smoke runs are disposable; LeRobot refuses an existing output dir
         import shutil
         shutil.rmtree(out, ignore_errors=True)
-    args = ["--policy.path=lerobot/smolvla_base",
+    args = [f"--policy.path={init_from}",
             f"--dataset.repo_id={repo}",
             f"--rename_map={json.dumps(CAMERA_RENAME)}",
             f"--batch_size={batch_size}", f"--steps={steps}", f"--num_workers={num_workers}",
@@ -109,7 +147,10 @@ def train(hf_user: str, steps: int, batch_size: int, save_freq: int, push: bool,
             f"--log_freq={min(log_freq, steps)}", "--eval_freq=0",
             f"--output_dir={out}", f"--job_name={name}",
             "--policy.device=cuda", "--wandb.enable=false",
-            f"--policy.push_to_hub={str(push).lower()}", f"--policy.repo_id={hf_user}/smolvla_rescuehands"]
+            f"--policy.push_to_hub={str(push).lower()}",
+            f"--policy.repo_id={model_repo or f'{hf_user}/smolvla_rescuehands'}"]
+    if lr is not None:
+        args.append(f"--optimizer.lr={lr}")
     env = {"HF_TOKEN": hf_token(),
            "RESCUEHANDS_WEIGHTS_DTYPE": "native" if precision == "bf16" else "float32",
            "ACCELERATE_MIXED_PRECISION": "fp16" if precision == "fp16" else "no"}
@@ -126,10 +167,10 @@ def run_name(push: bool) -> str:
     return "smolvla_rescuehands" if push else "smolvla_smoke"
 
 
-def verify(hf_user: str, push: bool):
-    checkpoint = ROOT / "outputs" / run_name(push) / "checkpoints" / "last" / "pretrained_model"
+def verify(hf_user: str, push: bool, dataset_repo: str | None = None, name: str | None = None):
+    checkpoint = ROOT / "outputs" / (name or run_name(push)) / "checkpoints" / "last" / "pretrained_model"
     run([PY, ROOT / "training" / "verify_checkpoint.py", "--checkpoint", checkpoint,
-         "--dataset", f"{hf_user}/rescuehands_table"])
+         "--dataset", dataset_repo or f"{hf_user}/rescuehands_table", "--write-contract"])
 
 
 def probe(hf_user: str, batch_size: int):
@@ -163,7 +204,16 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--hf-user", required=True)
     parser.add_argument("--stage", choices=["setup", "data", "probe", "train", "verify", "all"], default="all")
-    parser.add_argument("--episodes", type=int, default=120)
+    parser.add_argument("--episodes", type=int, default=120, help="clean demonstrations to keep")
+    parser.add_argument("--recovery-episodes", type=int, default=0,
+                        help="demonstrations with an injected drop and the teacher's recovery")
+    parser.add_argument("--dataset-name", default="rescuehands_table")
+    parser.add_argument("--base-dataset", help="existing Hub dataset to merge into the new one")
+    parser.add_argument("--init-from", default="lerobot/smolvla_base",
+                        help="starting policy: the base model, or our checkpoint to fine-tune further")
+    parser.add_argument("--model-repo", help="Hub repo for the trained policy")
+    parser.add_argument("--run-name", help="output folder under outputs/")
+    parser.add_argument("--lr", type=float, help="override the learning rate (lower when fine-tuning)")
     parser.add_argument("--shards", type=int, default=4)
     parser.add_argument("--first-seed", type=int, default=1000)
     parser.add_argument("--steps", type=int, default=12000)
@@ -180,14 +230,17 @@ def main():
     if args.stage in ("setup", "all"):
         setup()
     if args.stage in ("data", "all"):
-        data(args.hf_user, args.episodes, args.shards, args.first_seed)
+        data(args.hf_user, args.episodes, args.shards, args.first_seed, args.recovery_episodes,
+             args.dataset_name, args.base_dataset)
     if args.stage == "probe":
         probe(args.hf_user, args.batch_size)
+    dataset_repo = f"{args.hf_user}/{args.dataset_name}"
     if args.stage in ("train", "all"):
         train(args.hf_user, args.steps, args.batch_size, args.save_freq, not args.no_push,
-              args.precision, args.gpus, args.num_workers)
+              args.precision, args.gpus, args.num_workers, name=args.run_name,
+              init_from=args.init_from, dataset_repo=dataset_repo, model_repo=args.model_repo, lr=args.lr)
     if args.stage in ("train", "verify"):
-        verify(args.hf_user, not args.no_push)
+        verify(args.hf_user, not args.no_push, dataset_repo, args.run_name)
 
 
 if __name__ == "__main__":

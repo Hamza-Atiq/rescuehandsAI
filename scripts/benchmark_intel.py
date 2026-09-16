@@ -23,7 +23,8 @@ import numpy as np
 import openvino as ov
 import psutil
 
-from rescuehandsai.policies.smolvla_exported import CAMERA_SLOTS, to_chw_float
+from rescuehandsai.contract import CAMERA_SLOTS
+from rescuehandsai.policies.smolvla_exported import to_chw_float
 from rescuehandsai.scene import ROOT
 from rescuehandsai.sim import MujocoSimulation
 from rescuehandsai.task import make_task

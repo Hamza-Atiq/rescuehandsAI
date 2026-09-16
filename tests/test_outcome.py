@@ -94,6 +94,14 @@ class HandoffTrackerTests(unittest.TestCase):
         self.step(t, {"left_arm"}, True)
         self.assertFalse(self.step(t, {"left_arm"}, False))
 
+    def test_table_assisted_transfer_is_not_a_handoff(self):
+        """Shared in the air, then it rests on the table while the left hand holds it."""
+        t = HandoffTracker("fork")
+        self.step(t, {"right_arm"}, False)
+        self.step(t, {"left_arm", "right_arm"}, False)
+        self.step(t, {"left_arm"}, True)        # supported again: transfer not completed
+        self.assertFalse(self.step(t, {"left_arm"}, False))
+
     def test_both_touching_on_the_table_is_not_shared_in_air(self):
         t = HandoffTracker("fork")
         self.step(t, {"right_arm"}, True)
