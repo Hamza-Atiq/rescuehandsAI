@@ -11,10 +11,8 @@ from pathlib import Path
 
 import numpy as np
 
+from ..contract import CAMERA_SLOTS, check_contract, load_contract
 from ..contracts import BimanualAction
-
-# policy camera slot -> our camera name (same order as the training rename map)
-CAMERA_SLOTS = {"camera1": "overhead", "camera2": "left_wrist", "camera3": "right_wrist"}
 
 
 def to_chw_float(image: np.ndarray) -> np.ndarray:
@@ -31,6 +29,8 @@ class ExportedSmolVLAPolicy:
         from physicalai.inference.model import InferenceModel  # .venv-pai only
 
         self.export_dir = Path(export_dir)
+        self.contract = load_contract(self.export_dir)
+        check_contract(self.contract, joint_names, cameras=CAMERA_SLOTS)
         manifest = json.loads((self.export_dir / "manifest.json").read_text())
         self.manifest = manifest
         self.model = InferenceModel(self.export_dir, device=device)
@@ -56,8 +56,8 @@ class ExportedSmolVLAPolicy:
     def reset(self, sim, task):
         self._queue.clear()
         self.model.reset()
-        if tuple(sim.names) != self.joint_names:
-            raise ValueError("joint order differs from the order used in training")
+        check_contract(self.contract, sim.names, cameras=CAMERA_SLOTS,
+                       control_hz=1 / sim.config["control_dt"])
 
     def wants_images(self) -> bool:
         return not self._queue
@@ -86,4 +86,4 @@ class ExportedSmolVLAPolicy:
     def metadata(self):
         return {"name": self.name, "backend": self.model.backend, "device": self.device,
                 "checkpoint": str(self.export_dir), "n_action_steps": self.n_action_steps,
-                "privileged_state": False, "camera_slots": CAMERA_SLOTS}
+                "privileged_state": False, "camera_slots": CAMERA_SLOTS, "contract": self.contract}

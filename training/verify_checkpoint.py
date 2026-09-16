@@ -6,7 +6,10 @@
 Checks: saved state/action shapes are 12, the three camera slots are declared,
 normalizer statistics have 12 values, joint names match the dataset, and the
 policy loaded through its saved processors returns a finite (50, 12) action chunk
-for a real dataset frame. Exit code 1 on any problem. Nothing is uploaded.
+for a real dataset frame. With --write-contract it also writes task_contract.json
+(ordered joint names, camera map, action units, control rate, dataset and weight
+hash) next to the checkpoint, which inference then refuses to run without.
+Exit code 1 on any problem. Nothing is uploaded.
 """
 import argparse
 import json
@@ -23,6 +26,9 @@ def main():
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--dataset-root", help="local copy of the dataset, to avoid downloading it")
     parser.add_argument("--device", default="cuda")
+    parser.add_argument("--control-hz", type=float, default=20.0)
+    parser.add_argument("--write-contract", action="store_true",
+                        help="write task_contract.json next to the checkpoint")
     args = parser.parse_args()
 
     import torch
@@ -78,6 +84,14 @@ def main():
     else:
         target = item["action"].to(actions.device)
         report["first_action_abs_error_rad"] = round(float((actions[0, 0] - target).abs().mean()), 4)
+
+    if args.write_contract and not problems:
+        from rescuehandsai.contract import build_contract, file_sha256, write_contract
+        weights = args.checkpoint / "model.safetensors"
+        contract = build_contract(names, dataset=args.dataset, dataset_revision=dataset.revision,
+                                  control_hz=args.control_hz, source=str(args.checkpoint),
+                                  files={weights.name: file_sha256(weights)})
+        report["contract"] = str(write_contract(args.checkpoint, contract))
 
     report["problems"] = problems
     print(json.dumps(report, indent=2))

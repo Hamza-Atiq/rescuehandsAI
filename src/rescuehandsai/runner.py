@@ -73,13 +73,13 @@ class EpisodeLog:
 class EpisodeRunner:
     def __init__(self, sim, policy, *, supervisor: bool, fault=None, max_steps: int | None = None,
                  max_recoveries: int | None = None, settle_steps: int = 10, stall_seconds: float = 15.0,
-                 on_frame=None):
+                 on_frame=None, on_command=None):
         """max_steps / max_recoveries default to the task's timeout_s / max_recoveries;
         explicit values are evaluation overrides and are recorded in the episode log."""
         self.sim, self.policy, self.supervisor = sim, policy, supervisor
         self.stall_seconds = stall_seconds
         self.fault, self.max_steps, self.max_recoveries = fault, max_steps, max_recoveries
-        self.settle_steps, self.on_frame = settle_steps, on_frame
+        self.settle_steps, self.on_frame, self.on_command = settle_steps, on_frame, on_command
 
     # -- progress from physics (never from the policy's claims) -----------------
     @staticmethod
@@ -108,6 +108,8 @@ class EpisodeRunner:
             raise EpisodeBudgetExceeded
         if self.fault is not None and self.fault.before_step(self.sim, facts, task, log.steps):
             log.fault_step = log.steps
+        if self.on_command:  # demonstration recording: every executed command, recovery included
+            self.on_command(self.sim, action)
         self.sim.step(action)
         log.steps += 1
         if self.on_frame:
