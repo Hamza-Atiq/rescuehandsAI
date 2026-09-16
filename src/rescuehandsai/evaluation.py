@@ -8,6 +8,9 @@ SETTLED_SPIN = 0.3     # rad/s; a rolling cup or spinning utensil is not settled
 SPARE_MAX_SHIFT = 0.03  # m the spare utensil may move and still count as untouched
 UPRIGHT_TOLERANCE = 0.008  # m of cup centre height error before it counts as tipped
 UPRIGHT_MIN_UP_Z = math.cos(math.radians(15))  # cup axis within 15 degrees of vertical
+# Control steps the utensil may be airborne with no hand on it during a hand-off (contact
+# flicker). Measured teacher maximum on seeds 0-9 was 1 (scripts/measure_handoff_gap.py).
+MAX_UNHELD_STEPS = 5
 
 
 class HandoffTracker:
@@ -24,6 +27,7 @@ class HandoffTracker:
 
     def reset(self):
         self.stage = "none"
+        self.unheld = 0
 
     @property
     def done(self) -> bool:
@@ -35,6 +39,9 @@ class HandoffTracker:
         held, airborne = facts.held_by[self.item], not facts.supported[self.item]
         if self.stage == "shared" and not airborne:
             self.stage = "none"  # it is resting again: the in-air transfer was not completed
+        self.unheld = self.unheld + 1 if (self.stage == "shared" and not held) else 0
+        if self.unheld > MAX_UNHELD_STEPS:
+            self.stage, self.unheld = "none", 0  # nobody held it for too long: not a hand-to-hand transfer
         if held == {"right_arm"}:
             self.stage = "right"
         elif held == {"left_arm", "right_arm"} and airborne and self.stage in ("right", "shared"):
@@ -76,7 +83,10 @@ def task_outcome(facts, task, handoff_done: bool, scene_params, start_positions=
                         and abs(facts.height["cup"] - scene_params.cup_half_height) < UPRIGHT_TOLERANCE),
         "settled": all(facts.speed[i] < SETTLED_SPEED and facts.angular_speed[i] < SETTLED_SPIN for i in items),
         "spare_utensil_in_place": (other not in facts.out_of_bounds and facts.supported[other]
-                                   and math.hypot(ox - sx, oy - sy) < SPARE_MAX_SHIFT),
+                                   and math.hypot(ox - sx, oy - sy) < SPARE_MAX_SHIFT
+                                   and not facts.touching[other]  # no hand on it at the end
+                                   and facts.speed[other] < SETTLED_SPEED
+                                   and facts.angular_speed[other] < SETTLED_SPIN),
     }
     return {"success": all(checks.values()), **checks}
 

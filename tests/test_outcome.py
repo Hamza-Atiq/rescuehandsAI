@@ -2,7 +2,7 @@
 import unittest
 
 from rescuehandsai.auditor import AuditFacts
-from rescuehandsai.evaluation import HandoffTracker, task_outcome
+from rescuehandsai.evaluation import MAX_UNHELD_STEPS, HandoffTracker, task_outcome
 from rescuehandsai.scene import load_config, sample_params
 from rescuehandsai.task import make_task
 
@@ -51,6 +51,14 @@ class OutcomeTests(unittest.TestCase):
         self.assertFalse(self.outcome(out_of_bounds={self.other})["success"])
         self.assertFalse(self.outcome(supported={self.other: False})["success"])
         self.assertFalse(self.outcome(positions={self.other: (sx + 0.08, sy, 0.006)})["success"])
+
+    def test_spare_utensil_held_or_moving_at_the_end_fails(self):
+        """In place is not untouched: a hand on it, or it still sliding, is not a finished table."""
+        self.assertFalse(self.outcome(touching={self.other: {"right_arm"}})["spare_utensil_in_place"])
+        self.assertFalse(self.outcome(held_by={self.other: {"right_arm"}},
+                                      touching={self.other: {"right_arm"}})["success"])
+        self.assertFalse(self.outcome(speed={self.other: 3.0})["spare_utensil_in_place"])
+        self.assertFalse(self.outcome(angular_speed={self.other: 2.0})["spare_utensil_in_place"])
 
     def test_tipped_cup_fails(self):
         self.assertFalse(self.outcome(height={"cup": self.params.cup_radius})["success"])
@@ -101,6 +109,23 @@ class HandoffTrackerTests(unittest.TestCase):
         self.step(t, {"left_arm", "right_arm"}, False)
         self.step(t, {"left_arm"}, True)        # supported again: transfer not completed
         self.assertFalse(self.step(t, {"left_arm"}, False))
+
+    def test_long_unheld_gap_in_the_air_is_not_a_handoff(self):
+        """Brief flicker is fine (the teacher's longest is 1 step); a long gap is not a transfer."""
+        t = HandoffTracker("fork")
+        self.step(t, {"right_arm"}, False)
+        self.step(t, {"left_arm", "right_arm"}, False)
+        for _ in range(100):
+            self.step(t, set(), False)
+        self.assertFalse(self.step(t, {"left_arm"}, False))
+
+    def test_gap_up_to_the_bound_still_counts(self):
+        t = HandoffTracker("fork")
+        self.step(t, {"right_arm"}, False)
+        self.step(t, {"left_arm", "right_arm"}, False)
+        for _ in range(MAX_UNHELD_STEPS):
+            self.step(t, set(), False)
+        self.assertTrue(self.step(t, {"left_arm"}, False))
 
     def test_both_touching_on_the_table_is_not_shared_in_air(self):
         t = HandoffTracker("fork")
