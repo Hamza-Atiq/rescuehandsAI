@@ -98,6 +98,34 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(glitch._left, 0)
         self.assertIsNone(log.fault_step)  # recovery cannot start a new fault
 
+    def test_a_policy_can_ask_for_recovery_instead_of_ending_the_episode(self):
+        """The teacher raises FAILED_GRASP when the item is not in the hand it planned for."""
+        class AsksForHelp(IdlePolicy):
+            name = "asks_for_help"
+            calls = 0
+
+            def act(self, obs):
+                type(self).calls += 1
+                if type(self).calls == 5:
+                    raise RuntimeError("FAILED_GRASP: the right hand is not holding the fork")
+                return super().act(obs)
+
+        log = EpisodeRunner(self.sim, AsksForHelp(), supervisor=True, stall_seconds=30.0,
+                            max_steps=400).run(make_task(0))
+        self.assertIn("FAILED_GRASP", [e["label"] for e in log.events])
+        self.assertGreaterEqual(log.recoveries, 1)
+        self.assertNotEqual(log.failure, "POLICY_ERROR")
+
+    def test_an_unknown_policy_error_still_ends_the_episode(self):
+        class Breaks(IdlePolicy):
+            name = "breaks"
+
+            def act(self, obs):
+                raise RuntimeError("something unexpected")
+
+        log = EpisodeRunner(self.sim, Breaks(), supervisor=True, max_steps=50).run(make_task(0))
+        self.assertEqual((log.state, log.failure, log.recoveries), ("FAILED", "POLICY_ERROR", 0))
+
     def test_supervisor_recovers_from_gripper_glitch(self):
         task = make_task(1)
         failed = EpisodeRunner(self.sim, ScriptedPolicy(), supervisor=False, fault=GripperGlitch(),
