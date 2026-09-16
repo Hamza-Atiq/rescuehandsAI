@@ -34,17 +34,15 @@ for stage in $stages; do
       $PY scripts/export_openvino.py --checkpoint "$ckpt" --out "$export_dir"
       ;;
     eval)
-      for combo in "on none" "off none" "on glitch"; do
+      # most important first: the supervised fault run shows drops and recoveries (the demo);
+      # states are saved for showcase video drawn later (on the iGPU a video costs minutes per seed)
+      for combo in "on glitch" "on none" "off none"; do
         set -- $combo
         out=results/smolvla_${name}_sup-$1_fault-$2
         if [ -f "$out/summary.json" ] && grep -q '"complete": true' "$out/summary.json"; then log "eval: $out complete"; continue; fi
         [ -d "$out" ] && { log "eval: $out is incomplete; move it aside to re-run"; exit 1; }
-        # the demo video comes from the supervised fault run (it shows drops and recoveries);
-        # front-camera video costs ~2-3 extra minutes per seed on the HD 520, so only there
-        video=""; if [ "$1 $2" = "on glitch" ]; then video="--video"; fi
-        log "eval: $out (about 4-5 min per seed${video:+, with video})"
-        $PY scripts/evaluate.py --policy smolvla --export "$export_dir" --device GPU --seeds 0:10 \
-            --supervisor "$1" --fault "$2" --name "smolvla_${name}_sup-$1_fault-$2" $video
+        log "eval: $out (about 4-5 min per seed)"
+        $PY scripts/evaluate.py --policy smolvla --export "$export_dir" --device GPU --seeds 0:10             --supervisor "$1" --fault "$2" --name "smolvla_${name}_sup-$1_fault-$2" --save-states
       done
       ;;
     bench)

@@ -102,6 +102,32 @@ class VideoWriter:
             self.writer.release()
 
 
+class StateRecorder:
+    """Physical state after every control step, so presentation video can be drawn later.
+
+    Rendering a video during evaluation costs minutes per seed on an integrated GPU;
+    saving qpos costs nothing, and scripts/render_showcase.py --states replays it from
+    any presentation camera."""
+
+    def __init__(self, path: Path):
+        self.path, self.qpos, self.states = path, [], []
+
+    def __call__(self, sim, state):
+        self.qpos.append(sim.data.qpos.copy())
+        self.states.append(state)
+
+    def close(self, seed: int, instruction: str, policy_name: str):
+        np.savez_compressed(self.path, qpos=np.array(self.qpos), runner_state=np.array(self.states),
+                            seed=seed, instruction=instruction, policy=policy_name)
+
+
+def chain(*hooks):
+    hooks = [h for h in hooks if h is not None]
+    if not hooks:
+        return None
+    return lambda sim, state: [h(sim, state) for h in hooks]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--policy", choices=["scripted", "smolvla"], required=True)
@@ -114,6 +140,8 @@ def main():
     parser.add_argument("--max-steps", type=int, default=None,
                         help="override the task timeout (default: task.timeout_s / control_dt)")
     parser.add_argument("--video", action="store_true")
+    parser.add_argument("--save-states", action="store_true",
+                        help="save qpos per control step (episode_<seed>_states.npz) for later showcase video")
     parser.add_argument("--perturb", action="store_true",
                         help="start off-nominal: arms nudged, items shifted (robustness check)")
     parser.add_argument("--perturb-scale", type=float, default=1.0, help="largest perturbation, 0-1")
@@ -140,8 +168,9 @@ def main():
         task = make_task(seed)
         fault = GripperGlitch() if args.fault == "glitch" else None
         video = VideoWriter(out / f"episode_{seed}.mp4", every=2, fps=10) if args.video else None
+        states = StateRecorder(out / f"episode_{seed}_states.npz") if args.save_states else None
         runner = EpisodeRunner(sim, policy, supervisor=args.supervisor == "on", fault=fault,
-                               max_steps=args.max_steps, on_frame=video,
+                               max_steps=args.max_steps, on_frame=chain(video, states),
                                on_reset=(lambda sim_, task_: perturb_start(sim_, task_.seed, max_scale=args.perturb_scale))
                                if args.perturb else None)
         try:
@@ -149,6 +178,8 @@ def main():
         finally:
             if video:
                 video.close()
+            if states:
+                states.close(seed, task.instruction, str(policy.metadata().get("name")))
         record = asdict(log)
         (out / f"episode_{seed}.json").write_text(json.dumps(record, indent=2, default=str))
         episodes.append(record)
