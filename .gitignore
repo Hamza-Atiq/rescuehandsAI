@@ -31,3 +31,5 @@ results/
 id_rsa*
 .venv-train/
 *.log
+kernel.errors.txt
+*.done
