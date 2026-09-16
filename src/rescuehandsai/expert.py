@@ -249,8 +249,13 @@ class ScriptedExpert:
         """
         arm, grip, item = "right_arm", "right_arm/gripper", self.task.utensil
         g = self._handle_geometry(item)
-        staged = False
-        for attempt in range(attempts):
+        if attempts < 1:
+            raise ValueError(f"attempts must be at least 1, got {attempts}")
+        staged, missed = False, 0
+        # Grasp attempts are counted apart from staging, and the loop only ends through a
+        # lift that really raised the utensil or an error; staging (at most once) never
+        # uses up the last attempt and falls out of the loop without a grasp.
+        while True:
             pos, axis = self._utensil_frame(item)
             center = pos + g["end"] * axis
             center[2] = max(TABLE_CLEARANCE, pos[2] - GRASP_DEPTH)
@@ -273,7 +278,8 @@ class ScriptedExpert:
             yield Move(q_lift, 18, "utensil_lift")
             if compute_facts(self.sim).height[item] > LIFTED_HEIGHT:
                 break
-            if attempt == attempts - 1:
+            missed += 1
+            if missed >= attempts:
                 raise LostItemError(f"FAILED_GRASP: the right hand could not grasp the {item}")
             yield Move({grip: OPEN}, 8, "regrasp_open")
             yield Move(q_pre, 15, "regrasp_back_off")

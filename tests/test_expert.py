@@ -53,10 +53,6 @@ class ExpertCupTests(unittest.TestCase):
             ScriptedExpert(self.sim, make_task(0), subtasks=("juggle",))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class ExpertFullTaskTests(unittest.TestCase):
     """Hand-off task end to end. Seeds 0-2 cover both fork and spoon."""
 
@@ -92,3 +88,7 @@ class ExpertFullTaskTests(unittest.TestCase):
                 for item in ("cup", task.utensil):
                     self.assertEqual(f.touching[item], set())
                     self.assertLess(f.speed[item], 0.02)
+
+
+if __name__ == "__main__":
+    unittest.main()

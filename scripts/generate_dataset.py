@@ -14,7 +14,7 @@ from pathlib import Path
 
 from rescuehandsai.auditor import compute_facts
 from rescuehandsai.evaluation import HandoffTracker, task_outcome
-from rescuehandsai.randomize import perturb_start, start_problems
+from rescuehandsai.randomize import perturb_start, start_problems, start_warnings
 
 
 class SkipEpisode(Exception):
@@ -92,6 +92,7 @@ def main():
                 recorder.discard()
             record = {"seed": seed, "utensil": task.utensil, "instruction": task.instruction, "steps": steps,
                       "saved": keep, "error": error, "outcome": outcome, "perturbed": bool(perturbation),
+                      "start_warnings": start_warnings(start),
                       "wall_s": round(time.time() - started, 1)}
             log.write(json.dumps(record) + "\n")
             log.flush()
