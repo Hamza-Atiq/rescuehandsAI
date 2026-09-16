@@ -1,0 +1,150 @@
+{
+  "seed": 6,
+  "policy": {
+    "name": "smolvla_openvino_gpu",
+    "backend": "openvino",
+    "device": "GPU",
+    "checkpoint": "models\\openvino\\v2_fp32",
+    "n_action_steps": 25,
+    "privileged_state": false,
+    "camera_slots": {
+      "camera1": "overhead",
+      "camera2": "left_wrist",
+      "camera3": "right_wrist"
+    },
+    "contract": {
+      "joint_order": [
+        "left_arm/shoulder_pan",
+        "left_arm/shoulder_lift",
+        "left_arm/elbow_flex",
+        "left_arm/wrist_flex",
+        "left_arm/wrist_roll",
+        "left_arm/gripper",
+        "right_arm/shoulder_pan",
+        "right_arm/shoulder_lift",
+        "right_arm/elbow_flex",
+        "right_arm/wrist_flex",
+        "right_arm/wrist_roll",
+        "right_arm/gripper"
+      ],
+      "cameras": {
+        "camera1": "overhead",
+        "camera2": "left_wrist",
+        "camera3": "right_wrist"
+      },
+      "action_units": "absolute joint position targets in radians",
+      "control_hz": 20.0,
+      "dataset": "ABDHAM/rescuehands_table_v2",
+      "dataset_revision": "v3.0",
+      "source": "/kaggle/working/rescuehandsAI/outputs/smolvla_rescuehands_v2/checkpoints/last/pretrained_model",
+      "files": {
+        "smolvla.xml": "22b6a927679f8b5f6d2e699e0a2e9b9d80597ff2839db69457e42e9a6cb24ded",
+        "smolvla.bin": "778f9b55dcc718fec5aaff4061a659181ef543a9bfa2ca97510fc2ab9044d92c",
+        "tokenizer.xml": "94e9bad47abeb549043b44a0cbc4f01c421c0a5c82366c839a1525c589ab0148",
+        "tokenizer.bin": "2956b6fd761e8491d2fb0b6e1d7d9d26c539f753774133518d4a13673017d4ee",
+        "manifest.json": "30854be5f68589a2461c3f65825123d5d753f8e9543a78fa9cdd9f1bf22543a6"
+      }
+    }
+  },
+  "instruction": "Set a place for dinner: cup beside the plate, and pass me the fork with the other hand.",
+  "supervisor": true,
+  "fault": "GripperGlitch",
+  "state": "FAILED",
+  "steps": 1284,
+  "events": [
+    {
+      "label": "FAILED_GRASP",
+      "time": 15.050000000000953,
+      "item": "fork",
+      "arm": null
+    },
+    {
+      "label": "OBJECT_DROPPED",
+      "time": 21.599999999999987,
+      "item": "fork",
+      "arm": "right_arm"
+    },
+    {
+      "label": "TARGET_MISSED",
+      "time": 64.2000000000141,
+      "item": null,
+      "arm": null
+    },
+    {
+      "label": "RECOVERY_EXHAUSTED",
+      "time": 64.2000000000141
+    }
+  ],
+  "recoveries": 2,
+  "clamped_joint_steps": 8,
+  "inference_calls": 50,
+  "inference_seconds": [
+    4.749972799996613,
+    4.981037599995034,
+    5.6454338999974425,
+    5.209315200001583,
+    4.7257188000003225,
+    4.490681200004474,
+    4.387213000001793,
+    4.121512800003984,
+    4.195893399999477,
+    4.784318399993936,
+    4.269291800002975,
+    4.327632300002733,
+    4.4012237999995705,
+    4.253389199999219,
+    4.16625280000153,
+    4.190905499999644,
+    4.249084499999299,
+    4.208670799998799,
+    4.185897200004547,
+    4.15491579999798,
+    4.328127500004484,
+    4.386493800004246,
+    4.160670700002811,
+    4.17302429999836,
+    4.1406963000044925,
+    4.231895199998689,
+    4.27701910000178,
+    4.152286399999866,
+    4.200310100000934,
+    4.161918399993738,
+    4.278423399999156,
+    4.207555600005435,
+    4.263269999995828,
+    4.1974898999978905,
+    4.16302700000233,
+    4.150441899997531,
+    4.187347499995667,
+    4.273247500001162,
+    4.172049499997229,
+    4.157779400004074,
+    4.10296599999856,
+    4.310035899994546,
+    4.204138000000967,
+    4.214166900004784,
+    5.236719200001971,
+    4.309312099998351,
+    4.129650000002584,
+    4.232397200001287,
+    4.609454200006439,
+    4.150524100004986
+  ],
+  "fault_step": 429,
+  "max_steps": 1500,
+  "max_recoveries": 2,
+  "outcome": {
+    "success": false,
+    "cup_in_zone": true,
+    "utensil_in_zone": true,
+    "handoff": true,
+    "released": true,
+    "supported": true,
+    "cup_upright": true,
+    "settled": true,
+    "spare_utensil_in_place": false
+  },
+  "failure": "RECOVERY_EXHAUSTED",
+  "sim_seconds": 64.2000000000141,
+  "wall_seconds": 250.81
+}

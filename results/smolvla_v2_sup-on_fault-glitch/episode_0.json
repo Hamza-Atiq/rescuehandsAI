@@ -1,0 +1,129 @@
+{
+  "seed": 0,
+  "policy": {
+    "name": "smolvla_openvino_gpu",
+    "backend": "openvino",
+    "device": "GPU",
+    "checkpoint": "models\\openvino\\v2_fp32",
+    "n_action_steps": 25,
+    "privileged_state": false,
+    "camera_slots": {
+      "camera1": "overhead",
+      "camera2": "left_wrist",
+      "camera3": "right_wrist"
+    },
+    "contract": {
+      "joint_order": [
+        "left_arm/shoulder_pan",
+        "left_arm/shoulder_lift",
+        "left_arm/elbow_flex",
+        "left_arm/wrist_flex",
+        "left_arm/wrist_roll",
+        "left_arm/gripper",
+        "right_arm/shoulder_pan",
+        "right_arm/shoulder_lift",
+        "right_arm/elbow_flex",
+        "right_arm/wrist_flex",
+        "right_arm/wrist_roll",
+        "right_arm/gripper"
+      ],
+      "cameras": {
+        "camera1": "overhead",
+        "camera2": "left_wrist",
+        "camera3": "right_wrist"
+      },
+      "action_units": "absolute joint position targets in radians",
+      "control_hz": 20.0,
+      "dataset": "ABDHAM/rescuehands_table_v2",
+      "dataset_revision": "v3.0",
+      "source": "/kaggle/working/rescuehandsAI/outputs/smolvla_rescuehands_v2/checkpoints/last/pretrained_model",
+      "files": {
+        "smolvla.xml": "22b6a927679f8b5f6d2e699e0a2e9b9d80597ff2839db69457e42e9a6cb24ded",
+        "smolvla.bin": "778f9b55dcc718fec5aaff4061a659181ef543a9bfa2ca97510fc2ab9044d92c",
+        "tokenizer.xml": "94e9bad47abeb549043b44a0cbc4f01c421c0a5c82366c839a1525c589ab0148",
+        "tokenizer.bin": "2956b6fd761e8491d2fb0b6e1d7d9d26c539f753774133518d4a13673017d4ee",
+        "manifest.json": "30854be5f68589a2461c3f65825123d5d753f8e9543a78fa9cdd9f1bf22543a6"
+      }
+    }
+  },
+  "instruction": "Cup next to the plate please, and the spoon goes left of the plate after a hand-off.",
+  "supervisor": true,
+  "fault": "GripperGlitch",
+  "state": "FAILED",
+  "steps": 756,
+  "events": [
+    {
+      "label": "OBJECT_DROPPED",
+      "time": 3.4999999999999476,
+      "item": "spoon",
+      "arm": "right_arm"
+    },
+    {
+      "label": "FAILED_GRASP",
+      "time": 20.650000000000176,
+      "item": "spoon",
+      "arm": null
+    },
+    {
+      "label": "FAILED_GRASP",
+      "time": 37.800000000000885,
+      "item": "spoon",
+      "arm": null
+    },
+    {
+      "label": "RECOVERY_EXHAUSTED",
+      "time": 37.800000000000885
+    }
+  ],
+  "recoveries": 2,
+  "clamped_joint_steps": 0,
+  "inference_calls": 29,
+  "inference_seconds": [
+    5.653110100000049,
+    4.334376800004975,
+    4.447914400006994,
+    4.229753799998434,
+    4.599614999999176,
+    4.815342800000508,
+    4.432458800001768,
+    4.943883300002199,
+    4.530501599998388,
+    4.823034000000916,
+    5.078772600005323,
+    4.931754299999739,
+    4.8268465000001015,
+    4.746540799998911,
+    4.7633958000005805,
+    4.523343599998043,
+    4.38446280000062,
+    4.758664100001624,
+    4.5393631999977515,
+    4.498489899997367,
+    4.962715100002242,
+    4.942526599996199,
+    5.006071600000723,
+    4.544040699998732,
+    4.552400300002773,
+    5.007489800002077,
+    4.756994100003794,
+    4.993130199996813,
+    5.010930000004009
+  ],
+  "fault_step": null,
+  "max_steps": 1500,
+  "max_recoveries": 2,
+  "outcome": {
+    "success": false,
+    "cup_in_zone": false,
+    "utensil_in_zone": false,
+    "handoff": false,
+    "released": true,
+    "supported": true,
+    "cup_upright": true,
+    "settled": true,
+    "spare_utensil_in_place": false
+  },
+  "failure": "RECOVERY_EXHAUSTED",
+  "sim_seconds": 37.800000000000885,
+  "wall_seconds": 161.23
+}

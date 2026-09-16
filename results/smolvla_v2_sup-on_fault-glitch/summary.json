@@ -1,0 +1,91 @@
+{
+  "run": "smolvla_v2_sup-on_fault-glitch",
+  "created_utc": "20260916-170151",
+  "complete": true,
+  "planned_seeds": 10,
+  "git_revision": "8e8ef2bf1afd4de6979b5872f2b2a7e5a35b8cd9",
+  "source_dirty": false,
+  "policy": {
+    "name": "smolvla_openvino_gpu",
+    "backend": "openvino",
+    "device": "GPU",
+    "checkpoint": "models\\openvino\\v2_fp32",
+    "n_action_steps": 25,
+    "privileged_state": false,
+    "camera_slots": {
+      "camera1": "overhead",
+      "camera2": "left_wrist",
+      "camera3": "right_wrist"
+    },
+    "contract": {
+      "joint_order": [
+        "left_arm/shoulder_pan",
+        "left_arm/shoulder_lift",
+        "left_arm/elbow_flex",
+        "left_arm/wrist_flex",
+        "left_arm/wrist_roll",
+        "left_arm/gripper",
+        "right_arm/shoulder_pan",
+        "right_arm/shoulder_lift",
+        "right_arm/elbow_flex",
+        "right_arm/wrist_flex",
+        "right_arm/wrist_roll",
+        "right_arm/gripper"
+      ],
+      "cameras": {
+        "camera1": "overhead",
+        "camera2": "left_wrist",
+        "camera3": "right_wrist"
+      },
+      "action_units": "absolute joint position targets in radians",
+      "control_hz": 20.0,
+      "dataset": "ABDHAM/rescuehands_table_v2",
+      "dataset_revision": "v3.0",
+      "source": "/kaggle/working/rescuehandsAI/outputs/smolvla_rescuehands_v2/checkpoints/last/pretrained_model",
+      "files": {
+        "smolvla.xml": "22b6a927679f8b5f6d2e699e0a2e9b9d80597ff2839db69457e42e9a6cb24ded",
+        "smolvla.bin": "778f9b55dcc718fec5aaff4061a659181ef543a9bfa2ca97510fc2ab9044d92c",
+        "tokenizer.xml": "94e9bad47abeb549043b44a0cbc4f01c421c0a5c82366c839a1525c589ab0148",
+        "tokenizer.bin": "2956b6fd761e8491d2fb0b6e1d7d9d26c539f753774133518d4a13673017d4ee",
+        "manifest.json": "30854be5f68589a2461c3f65825123d5d753f8e9543a78fa9cdd9f1bf22543a6"
+      }
+    }
+  },
+  "supervisor": true,
+  "fault": "glitch",
+  "perturbed_start": false,
+  "perturb_scale": null,
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
+  ],
+  "episodes": 10,
+  "max_steps_override": null,
+  "success_rate": 0.1,
+  "successes": 1,
+  "failures": {
+    "RECOVERY_EXHAUSTED": 9
+  },
+  "collision_episodes": 0,
+  "faults_injected": 6,
+  "recovered_after_fault": 1,
+  "mean_recoveries": 1.9,
+  "mean_sim_seconds_success": 32.39999999999812,
+  "inference_calls": 341,
+  "inference_mean_s": 4.530513282111765,
+  "inference_p95_s": 5.256002199996146,
+  "platform": {
+    "processor": "Intel64 Family 6 Model 78 Stepping 3, GenuineIntel",
+    "system": "Windows-10-10.0.19045-SP0",
+    "python": "3.12.10"
+  },
+  "note": "Simulation time pauses during policy inference; latency is wall-clock and reported separately."
+}
