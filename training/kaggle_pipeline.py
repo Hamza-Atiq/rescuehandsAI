@@ -96,6 +96,32 @@ def merge_and_push(repo: str, roots, out_root: Path):
     run([PY, "-c", code], env={"HF_TOKEN": hf_token()})
 
 
+def upload_provenance(repo: str):
+    """Publish every attempt log (seed -> kept or why not) and the code revision next to the dataset.
+
+    LeRobot's merged dataset does not keep which seed produced which episode, or which
+    attempts were thrown away; these files do, so the dataset can be audited and rebuilt."""
+    logs = sorted((ROOT / "data").glob("*_attempts.jsonl"))
+    if not logs:
+        raise SystemExit("no data/*_attempts.jsonl files to upload")
+    revision = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    summary = {}
+    for log in logs:
+        rows = [json.loads(line) for line in log.read_text().splitlines() if line.strip()]
+        summary[log.name] = {"attempted": len(rows), "saved": sum(bool(r.get("saved")) for r in rows)}
+    manifest = ROOT / "data" / "provenance_manifest.json"
+    manifest.write_text(json.dumps({"dataset": repo, "code_revision": revision, "shards": summary}, indent=2))
+    print(json.dumps(summary, indent=2))
+    code = ("from pathlib import Path\n"
+            "from huggingface_hub import upload_file\n"
+            f"files = {[str(p) for p in logs + [manifest]]!r}\n"
+            "for path in files:\n"
+            "    upload_file(path_or_fileobj=path, path_in_repo='provenance/' + Path(path).name,"
+            f" repo_id={repo!r}, repo_type='dataset', commit_message='Add generation provenance')\n"
+            "print('uploaded', len(files), 'provenance files')\n")
+    run([PY, "-c", code], env={"HF_TOKEN": hf_token()})
+
+
 def data(hf_user: str, episodes: int, shards: int, first_seed: int, recovery_episodes: int = 0,
          repo_name: str = "rescuehands_table", base_dataset: str | None = None,
          perturbed_episodes: int = 0, perturb_scale: float = 0.6):
@@ -138,6 +164,7 @@ def data(hf_user: str, episodes: int, shards: int, first_seed: int, recovery_epi
         run([PY, "-c", code], env={"HF_TOKEN": hf_token()})
         roots.append(base_root)
     merge_and_push(repo, roots, ROOT / "data" / "merged")
+    upload_provenance(repo)
 
 
 def lr_args(lr: float | None, steps: int, warmup_steps: int | None = None) -> list:
@@ -253,7 +280,7 @@ def probe(hf_user: str, batch_size: int):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--hf-user", required=True)
-    parser.add_argument("--stage", choices=["setup", "data", "probe", "train", "verify", "all"], default="all")
+    parser.add_argument("--stage", choices=["setup", "data", "provenance", "probe", "train", "verify", "all"], default="all")
     parser.add_argument("--episodes", type=int, default=120, help="clean demonstrations to keep")
     parser.add_argument("--recovery-episodes", type=int, default=0,
                         help="demonstrations with an injected drop and the teacher's recovery")
@@ -295,6 +322,8 @@ def main():
     if args.stage in ("data", "all"):
         data(args.hf_user, args.episodes, args.shards, args.first_seed, args.recovery_episodes,
              args.dataset_name, args.base_dataset, args.perturbed_episodes, args.perturb_scale)
+    if args.stage == "provenance":
+        upload_provenance(f"{args.hf_user}/{args.dataset_name}")
     if args.stage == "probe":
         probe(args.hf_user, args.batch_size)
     dataset_repo = f"{args.hf_user}/{args.dataset_name}"
