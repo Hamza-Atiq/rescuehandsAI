@@ -126,6 +126,30 @@ class RunnerTests(unittest.TestCase):
         log = EpisodeRunner(self.sim, Breaks(), supervisor=True, max_steps=50).run(make_task(0))
         self.assertEqual((log.state, log.failure, log.recoveries), ("FAILED", "POLICY_ERROR", 0))
 
+    def test_planning_failure_at_reset_is_a_logged_failure_not_a_crash(self):
+        class CannotPlan(IdlePolicy):
+            name = "cannot_plan"
+
+            def reset(self, sim, task):
+                raise RuntimeError("initial planning failed")
+
+        log = EpisodeRunner(self.sim, CannotPlan(), supervisor=True, max_steps=50).run(make_task(0))
+        self.assertEqual((log.state, log.failure, log.steps), ("FAILED", "POLICY_ERROR", 0))
+        self.assertIn("initial planning failed", log.events[-1]["detail"])
+        self.assertFalse(log.outcome["success"])
+
+    def test_planning_failure_after_recovery_is_a_logged_failure_not_a_crash(self):
+        class ReplanBreaks(IdlePolicy):
+            name = "replan_breaks"
+
+            def after_recovery(self, sim, task, progress):
+                raise RuntimeError("planning failed after recovery")
+
+        log = EpisodeRunner(self.sim, ReplanBreaks(), supervisor=True, stall_seconds=0.5,
+                            max_steps=400).run(make_task(0))
+        self.assertEqual((log.state, log.failure, log.recoveries), ("FAILED", "POLICY_ERROR", 1))
+        self.assertIn("planning failed after recovery", log.events[-1]["detail"])
+
     def test_supervisor_recovers_from_gripper_glitch(self):
         task = make_task(1)
         failed = EpisodeRunner(self.sim, ScriptedPolicy(), supervisor=False, fault=GripperGlitch(),

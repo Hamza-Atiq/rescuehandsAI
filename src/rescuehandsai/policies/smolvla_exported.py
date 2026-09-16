@@ -28,8 +28,10 @@ class ExportedSmolVLAPolicy:
     def __init__(self, export_dir: Path, joint_names, *, device: str = "GPU", n_action_steps: int = 25):
         from physicalai.inference.model import InferenceModel  # .venv-pai only
 
+        if isinstance(n_action_steps, bool) or not isinstance(n_action_steps, int) or n_action_steps < 1:
+            raise ValueError(f"n_action_steps must be a positive integer, got {n_action_steps!r}")
         self.export_dir = Path(export_dir)
-        self.contract = load_contract(self.export_dir)
+        self.contract = load_contract(self.export_dir, verify=True)  # refuses files changed since export
         check_contract(self.contract, joint_names, cameras=CAMERA_SLOTS)
         manifest = json.loads((self.export_dir / "manifest.json").read_text())
         self.manifest = manifest
@@ -71,7 +73,7 @@ class ExportedSmolVLAPolicy:
             for camera, key in self._image_keys.items():
                 inputs[key] = to_chw_float(obs.images[camera])
             chunk = np.asarray(self.model.predict_action_chunk(inputs))
-            if chunk.ndim != 2 or chunk.shape[1] != len(self.joint_names):
+            if chunk.ndim != 2 or chunk.shape[0] == 0 or chunk.shape[1] != len(self.joint_names):
                 raise RuntimeError(f"POLICY_ERROR: action chunk shape {chunk.shape}")
             if not np.isfinite(chunk).all():
                 raise RuntimeError("POLICY_ERROR: non-finite actions")
