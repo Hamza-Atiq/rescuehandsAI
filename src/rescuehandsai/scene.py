@@ -127,6 +127,7 @@ SHOWCASE_CAMERAS = {  # name: (position, look-at point, vertical field of view);
     "handoff": ((0.28, 0.50, 0.17), (0.06, 0.15, 0.07), 46),
     "left_side": ((-0.68, 0.50, 0.32), (0.0, 0.16, 0.05), 40),
     "wide": ((0.0, 1.05, 0.72), (0.0, 0.12, 0.0), 42),
+    "cover": ((0.44, 0.66, 0.20), (0.03, 0.13, 0.155), 44),  # scene low in frame, sky free for a title
 }
 
 
