@@ -130,6 +130,11 @@ class EpisodeRunner:
                 done = follower.advance(move)
                 action = BimanualAction(self.sim.observe().timestamp, dict(follower.targets))
                 self._step(action, log, None, task, "RECOVERING")
+                # The retreat is watched too: going "home" is not proof the path was safe.
+                # (Cross-arm contact already stops sim.step; drops are re-checked after recovery.)
+                gone = sorted(compute_facts(self.sim).out_of_bounds)
+                if gone:
+                    raise RuntimeError(f"OBJECT_OUT_OF_BOUNDS: {', '.join(gone)} left the table during recovery")
 
     def _recover(self, log, task, events, monitor, holders, handoff, progress, policy, facts):
         """Bounded recovery: open both hands, return home, let the policy re-plan.
@@ -156,7 +161,8 @@ class EpisodeRunner:
             log.state, log.failure = "FAILED", "TIMEOUT"
             return None
         except (ValueError, RuntimeError) as exc:
-            label = "COLLISION" if "COLLISION" in str(exc) else "SIMULATION_ERROR"
+            named = str(exc).split(":")[0]
+            label = named if named in TERMINAL else ("COLLISION" if "COLLISION" in str(exc) else "SIMULATION_ERROR")
             log.events.append({"label": label, "time": facts.time, "detail": str(exc)})
             log.state, log.failure = "FAILED", label
             return None
