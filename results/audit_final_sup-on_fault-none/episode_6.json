@@ -1,0 +1,50 @@
+{
+  "seed": 6,
+  "policy": {
+    "name": "scripted_teacher",
+    "backend": "python",
+    "device": "cpu",
+    "checkpoint": null,
+    "privileged_state": true,
+    "note": "IK teacher; baseline and demonstration source only"
+  },
+  "instruction": "Set a place for dinner: cup beside the plate, and pass me the fork with the other hand.",
+  "supervisor": true,
+  "fault": null,
+  "state": "FAILED",
+  "steps": 352,
+  "events": [
+    {
+      "label": "OBJECT_DROPPED",
+      "time": 15.300000000000992,
+      "item": "fork",
+      "arm": "left_arm"
+    },
+    {
+      "label": "POLICY_ERROR",
+      "time": 17.600000000000783,
+      "detail": "left_arm: no pitch reaches [-0.092, 0.228, 0.011] with 0.05 m clearance"
+    }
+  ],
+  "recoveries": 1,
+  "clamped_joint_steps": 0,
+  "inference_calls": 0,
+  "inference_seconds": [],
+  "fault_step": null,
+  "max_steps": 1500,
+  "max_recoveries": 2,
+  "outcome": {
+    "success": false,
+    "cup_in_zone": false,
+    "utensil_in_zone": false,
+    "handoff": false,
+    "released": true,
+    "supported": true,
+    "cup_upright": true,
+    "settled": true,
+    "spare_utensil_in_place": true
+  },
+  "failure": "POLICY_ERROR",
+  "sim_seconds": 17.600000000000783,
+  "wall_seconds": 13.03
+}
