@@ -140,10 +140,30 @@ def data(hf_user: str, episodes: int, shards: int, first_seed: int, recovery_epi
     merge_and_push(repo, roots, ROOT / "data" / "merged")
 
 
+def lr_args(lr: float | None, steps: int, warmup_steps: int | None = None) -> list:
+    """Learning-rate overrides that actually reach the optimizer.
+
+    LeRobot 0.5.1 replaces `optimizer` and `scheduler` with the policy's presets
+    (configs/train.py, use_policy_training_preset=True), and SmolVLA's presets read
+    `policy.optimizer_lr` and `policy.scheduler_*`. So `--optimizer.lr` is silently
+    ignored; the policy fields are the ones to set. No lr keeps the preset exactly.
+    """
+    if lr is None:
+        return []
+    if not (lr > 0 and lr == lr and lr != float("inf")):
+        raise ValueError(f"learning rate must be positive and finite, got {lr}")
+    warmup = min(1000, max(1, steps // 10)) if warmup_steps is None else warmup_steps
+    if not 0 <= warmup < steps:
+        raise ValueError(f"warmup steps {warmup} must be in [0, {steps})")
+    return [f"--policy.optimizer_lr={lr}", f"--policy.scheduler_warmup_steps={warmup}",
+            f"--policy.scheduler_decay_steps={steps}"]
+
+
 def train(hf_user: str, steps: int, batch_size: int, save_freq: int, push: bool,
           precision: str = "fp16", gpus: int = 1, num_workers: int = 4, name: str | None = None,
           log_freq: int = 100, save: bool = True, stdout=None, init_from: str = "lerobot/smolvla_base",
-          dataset_repo: str | None = None, model_repo: str | None = None, lr: float | None = None):
+          dataset_repo: str | None = None, model_repo: str | None = None, lr: float | None = None,
+          warmup_steps: int | None = None):
     """precision: bf16 = SmolVLA default weights; fp32 = float32 weights;
     fp16 = float32 weights with fp16 autocast (T4 has fast fp16 kernels, no bf16).
 
@@ -165,8 +185,7 @@ def train(hf_user: str, steps: int, batch_size: int, save_freq: int, push: bool,
             "--policy.device=cuda", "--wandb.enable=false",
             f"--policy.push_to_hub={str(push).lower()}",
             f"--policy.repo_id={model_repo or f'{hf_user}/smolvla_rescuehands'}"]
-    if lr is not None:
-        args.append(f"--optimizer.lr={lr}")
+    args += lr_args(lr, steps, warmup_steps)
     env = {"HF_TOKEN": hf_token(),
            "RESCUEHANDS_WEIGHTS_DTYPE": "native" if precision == "bf16" else "float32",
            "ACCELERATE_MIXED_PRECISION": "fp16" if precision == "fp16" else "no"}
@@ -183,10 +202,25 @@ def run_name(push: bool) -> str:
     return "smolvla_rescuehands" if push else "smolvla_smoke"
 
 
-def verify(hf_user: str, push: bool, dataset_repo: str | None = None, name: str | None = None):
+def verify(hf_user: str, push: bool, dataset_repo: str | None = None, name: str | None = None,
+           model_repo: str | None = None):
+    """Check the saved checkpoint, write its task contract, and publish the contract.
+
+    LeRobot pushes the model during training, before this check exists, so the
+    contract is uploaded afterwards; deployment refuses a model without it."""
     checkpoint = ROOT / "outputs" / (name or run_name(push)) / "checkpoints" / "last" / "pretrained_model"
+    # verify_checkpoint imports rescuehandsai (src layout) to write the contract
     run([PY, ROOT / "training" / "verify_checkpoint.py", "--checkpoint", checkpoint,
-         "--dataset", dataset_repo or f"{hf_user}/rescuehands_table", "--write-contract"])
+         "--dataset", dataset_repo or f"{hf_user}/rescuehands_table", "--write-contract"],
+        env={"PYTHONPATH": str(ROOT / "src"), "HF_TOKEN": hf_token()})
+    if push:
+        repo = model_repo or f"{hf_user}/smolvla_rescuehands"
+        code = ("from huggingface_hub import upload_file\n"
+                f"upload_file(path_or_fileobj={str(checkpoint / 'task_contract.json')!r},"
+                f" path_in_repo='task_contract.json', repo_id={repo!r}, repo_type='model',"
+                " commit_message='Add verified task contract')\n"
+                f"print('uploaded task_contract.json to', {repo!r})\n")
+        run([PY, "-c", code], env={"HF_TOKEN": hf_token()})
 
 
 def probe(hf_user: str, batch_size: int):
@@ -232,7 +266,9 @@ def main():
                         help="starting policy: the base model, or our checkpoint to fine-tune further")
     parser.add_argument("--model-repo", help="Hub repo for the trained policy")
     parser.add_argument("--run-name", help="output folder under outputs/")
-    parser.add_argument("--lr", type=float, help="override the learning rate (lower when fine-tuning)")
+    parser.add_argument("--lr", type=float, help="override the learning rate (lower when fine-tuning); "
+                        "also sets the cosine schedule to decay over --steps")
+    parser.add_argument("--warmup-steps", type=int, help="learning-rate warmup with --lr (default: steps/10, max 1000)")
     parser.add_argument("--shards", type=int, default=4)
     parser.add_argument("--first-seed", type=int, default=1000)
     parser.add_argument("--steps", type=int, default=12000)
@@ -257,9 +293,10 @@ def main():
     if args.stage in ("train", "all"):
         train(args.hf_user, args.steps, args.batch_size, args.save_freq, not args.no_push,
               args.precision, args.gpus, args.num_workers, name=args.run_name,
-              init_from=args.init_from, dataset_repo=dataset_repo, model_repo=args.model_repo, lr=args.lr)
-    if args.stage in ("train", "verify"):
-        verify(args.hf_user, not args.no_push, dataset_repo, args.run_name)
+              init_from=args.init_from, dataset_repo=dataset_repo, model_repo=args.model_repo, lr=args.lr,
+              warmup_steps=args.warmup_steps)
+    if args.stage in ("train", "verify", "all"):
+        verify(args.hf_user, not args.no_push, dataset_repo, args.run_name, args.model_repo)
 
 
 if __name__ == "__main__":

@@ -18,6 +18,7 @@ from pathlib import Path
 
 JOINTS = 12
 CAMERA_SLOTS = ("observation.images.camera1", "observation.images.camera2", "observation.images.camera3")
+CAMERA_NAMES = ("overhead", "left_wrist", "right_wrist")  # dataset cameras, renamed to camera1..3 in training
 
 
 def main():
@@ -65,6 +66,15 @@ def main():
     report["joint_order"] = names
     if cfg.get("action_feature_names") not in (None, names):
         problems.append(f"checkpoint joint order {cfg.get('action_feature_names')} != dataset {names}")
+    state_names = dataset.meta.features["observation.state"].get("names")
+    if state_names != names:  # the policy reads state and writes actions in one joint order
+        problems.append(f"dataset state order {state_names} != action order {names}")
+    report["dataset_fps"] = dataset.meta.fps
+    if abs(float(dataset.meta.fps) - args.control_hz) > 1e-6:
+        problems.append(f"dataset fps {dataset.meta.fps} != control rate {args.control_hz}")
+    dataset_cameras = sorted(k for k, v in dataset.meta.features.items() if v.get("dtype") in ("video", "image"))
+    if dataset_cameras != sorted(f"observation.images.{camera}" for camera in CAMERA_NAMES):
+        problems.append(f"dataset cameras {dataset_cameras} are not {CAMERA_NAMES}")
 
     policy = SmolVLAPolicy.from_pretrained(str(args.checkpoint)).to(args.device).eval()
     pre, post = make_pre_post_processors(policy.config, pretrained_path=str(args.checkpoint),
@@ -87,10 +97,12 @@ def main():
 
     if args.write_contract and not problems:
         from rescuehandsai.contract import build_contract, file_sha256, write_contract
-        weights = args.checkpoint / "model.safetensors"
+        # weights, config, and the processors that hold the normalizer statistics
+        hashed = [p for p in sorted(args.checkpoint.iterdir()) if p.is_file() and
+                  (p.suffix == ".safetensors" or p.name == "config.json" or p.name.startswith("policy_"))]
         contract = build_contract(names, dataset=args.dataset, dataset_revision=dataset.revision,
                                   control_hz=args.control_hz, source=str(args.checkpoint),
-                                  files={weights.name: file_sha256(weights)})
+                                  files={p.name: file_sha256(p) for p in hashed})
         report["contract"] = str(write_contract(args.checkpoint, contract))
 
     report["problems"] = problems

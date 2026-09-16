@@ -160,7 +160,13 @@ class EpisodeRunner:
             log.events.append({"label": label, "time": facts.time, "detail": str(exc)})
             log.state, log.failure = "FAILED", label
             return None
-        policy.after_recovery(self.sim, task, progress)
+        try:
+            policy.after_recovery(self.sim, task, progress)
+        except Exception as exc:  # re-planning failed: the episode fails and is recorded, the run goes on
+            log.events.append({"label": "POLICY_ERROR", "time": float(self.sim.data.time),
+                               "detail": f"after_recovery: {type(exc).__name__}: {exc}"})
+            log.state, log.failure = "FAILED", "POLICY_ERROR"
+            return None
         log.state = "EXECUTING"
         return compute_facts(self.sim)
 
@@ -170,11 +176,18 @@ class EpisodeRunner:
         sim.reset(task.seed, instruction=task.instruction)
         if self.on_reset:
             self.on_reset(sim, task)
-        policy.reset(sim, task)
+        reset_error = None
+        try:
+            policy.reset(sim, task)
+        except Exception as exc:  # e.g. the teacher cannot plan this scene: a failed episode, not a crashed run
+            reset_error = f"reset: {type(exc).__name__}: {exc}"
         if self.fault is not None:
             self.fault.reset(task.seed)
         log = EpisodeLog(task.seed, policy.metadata(), task.instruction, self.supervisor,
                          type(self.fault).__name__ if self.fault else None, state="EXECUTING")
+        if reset_error:
+            log.events.append({"label": "POLICY_ERROR", "time": float(sim.data.time), "detail": reset_error})
+            log.state, log.failure = "FAILED", "POLICY_ERROR"
         log.max_steps = (self.max_steps if self.max_steps is not None
                          else round(task.timeout_s / sim.config["control_dt"]))
         log.max_recoveries = self.max_recoveries if self.max_recoveries is not None else task.max_recoveries

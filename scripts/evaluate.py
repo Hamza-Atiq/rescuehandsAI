@@ -11,6 +11,7 @@ optional front-camera MP4s. Seeds 0-9 are the evaluation seeds (never trained on
 """
 import argparse
 from dataclasses import asdict
+import hashlib
 from datetime import datetime, timezone
 import json
 import platform
@@ -35,6 +36,29 @@ def seed_range(text):
 def git_revision():
     out = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True, text=True)
     return out.stdout.strip() or None
+
+
+def source_state():
+    """Revision plus uncommitted changes, taken before the first episode.
+
+    A HEAD string alone cannot tell two runs apart when files were edited but not committed."""
+    def git(*cmd):
+        return subprocess.run(["git", "-C", str(ROOT), *cmd], capture_output=True, text=True).stdout
+    changed = [line[3:] for line in git("status", "--porcelain", "--untracked-files=no").splitlines()]
+    diff = git("diff", "HEAD")
+    return {"git_revision": git_revision(), "dirty": bool(changed), "changed_files": changed,
+            "diff_sha256": hashlib.sha256(diff.encode()).hexdigest() if changed else None}
+
+
+def package_versions():
+    from importlib.metadata import PackageNotFoundError, version
+    found = {}
+    for name in ("mujoco", "numpy", "openvino", "physicalai-train", "lerobot", "torch"):
+        try:
+            found[name] = version(name)
+        except PackageNotFoundError:
+            pass
+    return found
 
 
 def make_policy(args, sim):
@@ -104,6 +128,13 @@ def main():
     out.mkdir(parents=True, exist_ok=False)
     sim = MujocoSimulation()
     policy = make_policy(args, sim)
+    source = source_state()
+    manifest = {"run": name, "created_utc": stamp, "source": source,
+                "args": {k: (str(v) if isinstance(v, (Path, range)) else v) for k, v in vars(args).items()},
+                "seeds": list(args.seeds), "policy": policy.metadata(), "sim_config": sim.config,
+                "packages": package_versions(), "python": platform.python_version(),
+                "processor": platform.processor(), "platform": platform.platform()}
+    (out / "manifest.json").write_text(json.dumps(manifest, indent=2, default=str))
     episodes = []
     for seed in args.seeds:
         task = make_task(seed)
@@ -123,6 +154,16 @@ def main():
         episodes.append(record)
         print(json.dumps({"seed": seed, "state": log.state, "failure": log.failure,
                           "recoveries": log.recoveries, "steps": log.steps, "wall_s": log.wall_seconds}), flush=True)
+        # rewritten after every episode, so an interrupted run still has a truthful partial summary
+        (out / "summary.json").write_text(json.dumps(
+            summarize(episodes, args, name, stamp, source, complete=False), indent=2))
+    summary = summarize(episodes, args, name, stamp, source, complete=True)
+    (out / "summary.json").write_text(json.dumps(summary, indent=2))
+    print(json.dumps(summary, indent=2))
+    sim.close()
+
+
+def summarize(episodes, args, name, stamp, source, *, complete: bool) -> dict:
     n = len(episodes)
     successes = [e for e in episodes if e["state"] == "SUCCEEDED"]
     latencies = [t for e in episodes for t in e["inference_seconds"]]
@@ -132,7 +173,8 @@ def main():
             failures[e["failure"]] = failures.get(e["failure"], 0) + 1
     faulted = [e for e in episodes if e["fault_step"] is not None]
     summary = {
-        "run": name, "created_utc": stamp, "git_revision": git_revision(),
+        "run": name, "created_utc": stamp, "complete": complete, "planned_seeds": len(args.seeds),
+        "git_revision": source["git_revision"], "source_dirty": source["dirty"],
         "policy": episodes[0]["policy"] if episodes else None, "supervisor": args.supervisor == "on",
         "fault": args.fault, "perturbed_start": args.perturb,
         "perturb_scale": args.perturb_scale if args.perturb else None,
@@ -151,9 +193,7 @@ def main():
                      "python": platform.python_version()},
         "note": "Simulation time pauses during policy inference; latency is wall-clock and reported separately.",
     }
-    (out / "summary.json").write_text(json.dumps(summary, indent=2))
-    print(json.dumps(summary, indent=2))
-    sim.close()
+    return summary
 
 
 if __name__ == "__main__":

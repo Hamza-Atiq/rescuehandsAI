@@ -17,17 +17,48 @@ from rescuehandsai.contract import CAMERA_SLOTS, build_contract, check_contract,
 from rescuehandsai.sim import MujocoSimulation
 
 
+EXPORT_FILES = ("smolvla.xml", "smolvla.bin", "tokenizer.xml", "tokenizer.bin", "manifest.json")
+
+
+def write_export_contract(out: Path, contract: dict, checkpoint) -> dict:
+    """Copy the checkpoint's verified contract to the export, hashing every export file."""
+    missing = [name for name in ("smolvla.xml", "smolvla.bin", "manifest.json") if not (out / name).is_file()]
+    if missing:
+        raise SystemExit(f"export at {out} is incomplete: missing {missing}")
+    exported = build_contract(contract["joint_order"], dataset=contract["dataset"],
+                              dataset_revision=contract.get("dataset_revision"),
+                              control_hz=contract["control_hz"], source=str(checkpoint),
+                              files={name: file_sha256(out / name) for name in EXPORT_FILES if (out / name).is_file()},
+                              cameras=contract.get("cameras"))
+    write_contract(out, exported)
+    return exported
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--contract-only", action="store_true",
+                        help="label an existing export made from this checkpoint (exports made before "
+                             "contracts existed); export_report.json must name the same checkpoint")
     args = parser.parse_args()
-    if (args.out / "manifest.json").exists():
+    if (args.out / "manifest.json").exists() and not args.contract_only:
         parser.error(f"{args.out} already contains an export")
 
     sim = MujocoSimulation()
-    contract = load_contract(Path(args.checkpoint))  # local checkpoints only; refuses an unlabelled model
+    # local checkpoints only; refuses an unlabelled model or files changed since verification
+    contract = load_contract(Path(args.checkpoint), verify=True)
     check_contract(contract, sim.names, cameras=CAMERA_SLOTS, control_hz=1 / sim.config["control_dt"])
+    if args.contract_only:
+        report_path = args.out / "export_report.json"
+        if not report_path.is_file():
+            parser.error(f"{report_path} is missing, so the export cannot be tied to a checkpoint")
+        made_from = json.loads(report_path.read_text())["checkpoint"]
+        if Path(made_from).resolve() != Path(args.checkpoint).resolve():
+            parser.error(f"export was made from {made_from}, not {args.checkpoint}")
+        write_export_contract(args.out, contract, args.checkpoint)
+        print(json.dumps(load_contract(args.out, verify=True), indent=2))
+        return
 
     from physicalai.policies.smolvla import SmolVLA
     started = time.perf_counter()
@@ -48,11 +79,7 @@ def main():
 
     args.out.mkdir(parents=True, exist_ok=True)
     policy.export(args.out, backend="openvino")
-    exported = build_contract(contract["joint_order"], dataset=contract["dataset"],
-                              dataset_revision=contract.get("dataset_revision"),
-                              control_hz=contract["control_hz"], source=str(args.checkpoint),
-                              files={name: file_sha256(args.out / name) for name in ("smolvla.xml", "smolvla.bin")})
-    write_contract(args.out, exported)
+    exported = write_export_contract(args.out, contract, args.checkpoint)
     report = {"checkpoint": args.checkpoint, "inputs": schema, "outputs": outputs,
               "export_seconds": round(time.perf_counter() - started, 1),
               "files": sorted(p.name for p in args.out.iterdir()), "contract": exported}

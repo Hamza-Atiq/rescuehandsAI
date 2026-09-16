@@ -7,6 +7,7 @@ loads the contract and refuses a simulator that does not match it.
 """
 import hashlib
 import json
+import math
 from pathlib import Path
 
 CONTRACT_NAME = "task_contract.json"
@@ -28,6 +29,8 @@ def build_contract(joint_order, *, dataset: str, dataset_revision=None, control_
     joint_order = list(joint_order)
     if len(joint_order) != len(set(joint_order)) or not joint_order:
         raise ValueError(f"joint order must be unique and non-empty: {joint_order}")
+    if not _positive_finite(control_hz):
+        raise ValueError(f"control rate must be a positive finite number, got {control_hz}")
     return {"joint_order": joint_order, "cameras": dict(cameras or CAMERA_SLOTS),
             "action_units": ACTION_UNITS, "control_hz": control_hz, "dataset": dataset,
             "dataset_revision": dataset_revision, "source": source, "files": files or {}}
@@ -39,13 +42,42 @@ def write_contract(directory: Path, contract: dict) -> Path:
     return path
 
 
-def load_contract(directory: Path) -> dict:
+def _positive_finite(value) -> bool:
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(value) and value > 0
+
+
+def verify_files(directory: Path, contract: dict) -> None:
+    """Raise ValueError unless every hashed file is present and unchanged.
+
+    A contract describes specific files; new weights next to an old contract must not pass."""
+    files = contract.get("files") or {}
+    if not files:
+        raise ValueError("contract lists no file hashes, so it cannot vouch for these files")
+    problems = []
+    for name, expected in files.items():
+        path = Path(directory) / name
+        if not path.is_file():
+            problems.append(f"{name} missing")
+        elif file_sha256(path) != expected:
+            problems.append(f"{name} changed since the contract was written")
+    if problems:
+        raise ValueError("Model files do not match their contract: " + "; ".join(problems))
+
+
+def load_contract(directory: Path, *, verify: bool = False) -> dict:
     path = Path(directory) / CONTRACT_NAME
     if not path.is_file():
         raise FileNotFoundError(
             f"{path} is missing: this model was produced before the contract existed, or by other code. "
             "Write it with training/verify_checkpoint.py --write-contract before deploying.")
-    return json.loads(path.read_text())
+    contract = json.loads(path.read_text())
+    if verify:
+        verify_files(directory, contract)
+    return contract
 
 
 def check_contract(contract: dict, joint_names, *, cameras: dict | None = None, control_hz=None):
@@ -57,7 +89,9 @@ def check_contract(contract: dict, joint_names, *, cameras: dict | None = None, 
         problems.append(f"camera map {contract.get('cameras')} != {cameras}")
     if contract.get("action_units") != ACTION_UNITS:
         problems.append(f"action units {contract.get('action_units')!r} != {ACTION_UNITS!r}")
-    if control_hz is not None and abs(float(contract.get("control_hz", 0)) - control_hz) > 1e-6:
+    if not _positive_finite(contract.get("control_hz")):
+        problems.append(f"control rate {contract.get('control_hz')!r} is not a positive finite number")
+    elif control_hz is not None and abs(float(contract["control_hz"]) - control_hz) > 1e-6:
         problems.append(f"control rate {contract.get('control_hz')} Hz != {control_hz} Hz")
     if problems:
         raise ValueError("Model contract does not match this robot: " + "; ".join(problems))
