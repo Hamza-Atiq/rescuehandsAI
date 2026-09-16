@@ -1,6 +1,6 @@
 # RescueHands AI — current status
 
-**Snapshot: 2026-09-16, 20:12 PKT** (Pakistan time; Kaggle logs use UTC = PKT − 5 h).
+**Snapshot: 2026-09-16, 20:45 PKT** (after the Codex status verification fixes, commit 8d2fbd4) (Pakistan time; Kaggle logs use UTC = PKT − 5 h).
 Submission deadline: 23:30 PKT on lablab.ai. Organizers may extend it; this is unconfirmed.
 
 This is the single "where are we" file. Anything below that describes a running
@@ -108,7 +108,8 @@ kaggle_pipeline.py --stage train --steps 6000 --lr 5e-5 --warmup-steps 300 --sav
 | ~21:05–21:30 | **Kaggle: OpenVINO export** (new, untested there) | `!python training/kaggle_pipeline.py --hf-user ABDHAM --stage export --run-name smolvla_rescuehands_v2 --model-repo ABDHAM/smolvla_rescuehands_v2` → expect `export contract hashes OK` and `uploaded openvino_fp32/` |
 | ~21:30–21:40 | Laptop: fetch the export (~0.8 GB, ~8 min) | `bash scripts/deploy_learned.sh ABDHAM/smolvla_rescuehands_v2 v2 fetch-export` |
 | **Fallback** if the Kaggle export fails | Laptop download (18 min) + export (24 min) | `bash scripts/deploy_learned.sh ABDHAM/smolvla_rescuehands_v2 v2 download export` |
-| ~21:40 → | Laptop: 10-seed evaluations on the iGPU (~4–5 min per seed), most important first | `bash scripts/deploy_learned.sh ABDHAM/smolvla_rescuehands_v2 v2 eval`, which runs sup-on+glitch → sup-off+glitch → sup-on+none → sup-off+none (matched pairs), all with `--save-states` |
+| ~21:40 | **Smoke run first** on a development seed (not 0–9): does the exported v2 policy load, move and try the task? | `PYTHONPATH=src .venv-pai/Scripts/python.exe scripts/evaluate.py --policy smolvla --export models/openvino/v2_fp32 --device GPU --seeds 20:21 --supervisor on --max-steps 400 --name smolvla_v2_smoke_dev20 --save-states` |
+| ~21:50 → | Laptop: 10-seed evaluations on the iGPU (~4–5 min per seed), most important first | `bash scripts/deploy_learned.sh ABDHAM/smolvla_rescuehands_v2 v2 eval`, which runs sup-on+glitch → sup-off+glitch → sup-on+none → sup-off+none (matched pairs), all with `--save-states` |
 | in parallel | Laptop: full checkpoint download, needed for the PyTorch benchmark row | `bash scripts/deploy_learned.sh ABDHAM/smolvla_rescuehands_v2 v2 download` |
 | after evals | Intel benchmark on the v2 export | `bash scripts/deploy_learned.sh ABDHAM/smolvla_rescuehands_v2 v2 bench` (run on an idle laptop) |
 
