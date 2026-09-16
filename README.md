@@ -56,7 +56,8 @@ the 12 joint targets directly; there is no IK in the learned control loop.
 All numbers come from files under `results/` produced by `scripts/evaluate.py`
 and `scripts/benchmark_intel.py`. Each run folder has a `manifest.json` (code
 revision, uncommitted-change flag and diff hash, arguments, package versions)
-written before the first episode, and a `summary.json` updated after every episode.
+written before the first episode, and a `summary.json` updated after every episode
+(runs made before September 16 afternoon lack the manifest; their folders say so).
 The scripted rows below are committed in `results/audit_final_*`. Evaluation seeds 0–9 are never
 used for training data (training seeds start at 1000), but they did guide debugging
 of the scripted teacher, so they are not a pristine unseen set.
@@ -84,7 +85,7 @@ not count.
 | Scripted teacher (baseline) | on | none | 8/10 | seed 6 planning error, seed 9 recovery budget exhausted |
 | Scripted teacher (baseline) | off | gripper glitch | 2/10 | the teacher's own re-grasp saves 2 drops (seeds 0, 4); 8 end in `FAILED_GRASP` |
 | Scripted teacher (baseline) | on | gripper glitch | **7/10** | 2 recovery budgets exhausted (seeds 6, 8), 1 planning error (seed 9) |
-| SmolVLA v1 (OpenVINO, iGPU) | off | none | 1 of 9 completed | seeds 0–8 of an **interrupted** run (seed 9 has no result): seed 4 succeeded; 5 × `OBJECT_OUT_OF_BOUNDS`, 3 × `TIMEOUT`. Not a 10-seed result. |
+| SmolVLA v1 (OpenVINO, iGPU) | off | none | 1 of 9 completed | seeds 0–8 of an **interrupted** run (seed 9 has no result): seed 4 succeeded; 5 × `OBJECT_OUT_OF_BOUNDS`, 3 × `TIMEOUT`. Not a 10-seed result. Made before run manifests existed: see `results/smolvla_ov-gpu_sup-off_fault-none/PROVENANCE.md`. |
 | SmolVLA (OpenVINO, iGPU) | on | none / gripper glitch | pending | |
 
 "Collision" in these results means contact **between the two arms**; arm–table

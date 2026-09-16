@@ -1,0 +1,83 @@
+{
+  "seed": 1,
+  "policy": {
+    "name": "smolvla_openvino_gpu",
+    "backend": "openvino",
+    "device": "GPU",
+    "checkpoint": "models\\openvino\\fp32",
+    "n_action_steps": 25,
+    "privileged_state": false,
+    "camera_slots": {
+      "camera1": "overhead",
+      "camera2": "left_wrist",
+      "camera3": "right_wrist"
+    }
+  },
+  "instruction": "Cup next to the plate please, and the fork goes left of the plate after a hand-off.",
+  "supervisor": false,
+  "fault": null,
+  "state": "FAILED",
+  "steps": 492,
+  "events": [
+    {
+      "label": "FAILED_GRASP",
+      "time": 15.050000000000953,
+      "item": "fork",
+      "arm": null
+    },
+    {
+      "label": "OBJECT_DROPPED",
+      "time": 22.399999999999828,
+      "item": "cup",
+      "arm": "right_arm"
+    },
+    {
+      "label": "OBJECT_OUT_OF_BOUNDS",
+      "time": 24.59999999999939,
+      "item": "cup",
+      "arm": null
+    }
+  ],
+  "recoveries": 0,
+  "clamped_joint_steps": 11,
+  "inference_calls": 20,
+  "inference_seconds": [
+    4.156607199999598,
+    3.95929440000009,
+    3.6861031999997067,
+    3.6385129000000234,
+    3.645857100000285,
+    3.769192799999928,
+    3.7322637000002032,
+    3.7562416999999186,
+    3.7038446999999906,
+    3.668017299999974,
+    3.6778699999999844,
+    3.670834399999876,
+    3.675469400000111,
+    3.7380788000000393,
+    3.658511200000248,
+    3.637679399999797,
+    3.6526632000000063,
+    3.678327000000081,
+    3.7031787999999324,
+    3.664187700000184
+  ],
+  "fault_step": null,
+  "max_steps": 1500,
+  "max_recoveries": 2,
+  "outcome": {
+    "success": false,
+    "cup_in_zone": false,
+    "utensil_in_zone": false,
+    "handoff": false,
+    "released": true,
+    "supported": true,
+    "cup_upright": false,
+    "settled": false,
+    "spare_utensil_in_place": false
+  },
+  "failure": "OBJECT_OUT_OF_BOUNDS",
+  "sim_seconds": 24.59999999999939,
+  "wall_seconds": 105.71
+}
