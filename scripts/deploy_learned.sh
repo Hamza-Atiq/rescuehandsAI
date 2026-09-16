@@ -45,9 +45,10 @@ for stage in $stages; do
       $PY scripts/export_openvino.py --checkpoint "$ckpt" --out "$export_dir"
       ;;
     eval)
-      # most important first: the supervised fault run shows drops and recoveries (the demo);
-      # states are saved for showcase video drawn later (on the iGPU a video costs minutes per seed)
-      for combo in "on glitch" "on none" "off none"; do
+      # pairs that change ONE thing: glitch with supervisor on vs off measures recovery;
+      # clean with supervisor on vs off measures the supervisor's cost/benefit without faults.
+      # States are saved for showcase video drawn later (on the iGPU a video costs minutes per seed).
+      for combo in "on glitch" "off glitch" "on none" "off none"; do
         set -- $combo
         out=results/smolvla_${name}_sup-$1_fault-$2
         if [ -f "$out/summary.json" ] && grep -q '"complete": true' "$out/summary.json"; then log "eval: $out complete"; continue; fi

@@ -7,7 +7,19 @@ state (qpos) from the live simulation can be copied into it and drawn from any a
 import mujoco
 import numpy as np
 
-from .scene import SHOWCASE_CAMERAS, build_model
+import hashlib
+from pathlib import Path
+
+from .scene import SHOWCASE_CAMERAS, build_model, world_xml
+
+
+def scene_identity(sim) -> str:
+    """SHA-256 of the current seed's world XML plus the robot asset file.
+
+    Saved with evaluation states; a replay rebuilds the scene and must get the same value."""
+    digest = hashlib.sha256(world_xml(sim.scene_params, sim.scene_config).encode())
+    digest.update(Path(sim.asset_path).read_bytes())
+    return digest.hexdigest()
 
 
 class ShowcaseRenderer:

@@ -126,6 +126,18 @@ class RunnerTests(unittest.TestCase):
         log = EpisodeRunner(self.sim, Breaks(), supervisor=True, max_steps=50).run(make_task(0))
         self.assertEqual((log.state, log.failure, log.recoveries), ("FAILED", "POLICY_ERROR", 0))
 
+    def test_any_policy_exception_is_a_logged_failure_not_a_crash(self):
+        """Audit probe: a KeyError from inference escaped the runner and lost the episode."""
+        class MissingInput(IdlePolicy):
+            name = "missing_input"
+
+            def act(self, obs):
+                raise KeyError("camera input missing")
+
+        log = EpisodeRunner(self.sim, MissingInput(), supervisor=True, max_steps=50).run(make_task(0))
+        self.assertEqual((log.state, log.failure, log.recoveries), ("FAILED", "POLICY_ERROR", 0))
+        self.assertIn("KeyError", log.events[-1]["detail"])
+
     def test_planning_failure_at_reset_is_a_logged_failure_not_a_crash(self):
         class CannotPlan(IdlePolicy):
             name = "cannot_plan"

@@ -240,6 +240,12 @@ class EpisodeRunner:
                     continue
                 log.state, log.failure = "FAILED", label
                 break
+            except Exception as exc:  # any other policy/inference error ends the episode, recorded
+                # (KeyboardInterrupt is not an Exception, so a user stop still stops the run)
+                log.events.append({"label": "POLICY_ERROR", "time": facts.time,
+                                   "detail": f"{type(exc).__name__}: {exc}"})
+                log.state, log.failure = "FAILED", "POLICY_ERROR"
+                break
             facts = compute_facts(sim)
             for item in (task.utensil,):
                 holders |= facts.held_by[item]

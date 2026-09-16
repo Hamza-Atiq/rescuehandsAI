@@ -23,7 +23,7 @@ CARD = RGBColor(0x18, 0x24, 0x36)
 
 # Final learned-policy numbers: replace the placeholders once results/smolvla_v2_* exist.
 RESULTS = {
-    "v2_sup_on": "⟨x⟩/10", "v2_sup_off": "⟨y⟩/10", "v2_fault_sup_on": "⟨z⟩/10",
+    "v2_sup_on": "⟨x⟩/10", "v2_sup_off": "⟨y⟩/10", "v2_fault_sup_on": "⟨z⟩/10", "v2_fault_sup_off": "⟨w⟩/10",
     "igpu_s": "⟨a⟩ s", "torch_s": "⟨b⟩ s", "speedup": "⟨c⟩×", "diff": "⟨d⟩ rad",
 }
 
@@ -186,7 +186,7 @@ card(s, 0.6, 1.9, 4.0, 4.9, "Supervisor",
      "Drop or stalled grasp → open both hands, return to a safe pose, let the policy re-plan. At most 2 retries. "
      "The retreat itself is watched: an item leaving the table ends the episode.", RED)
 card(s, 4.72, 1.9, 4.0, 4.9, "Task success (10 steps stable)",
-     "Cup and utensil in their zones, released, supported, cup upright (≤15°), settled, spare utensil untouched, "
+     "Cup and utensil in their zones, released, supported, cup upright (≤15°), settled, spare utensil still near its start at the end, "
      "and an ordered IN-AIR hand-off: right alone → both → left alone, with at most 5 steps of contact flicker.", TEAL)
 card(s, 8.85, 1.9, 4.0, 4.9, "Checked, not assumed",
      "Model contracts pin joint order, cameras, rate and file hashes. Every run writes a manifest (code revision, "
@@ -200,10 +200,11 @@ table(s, [["Policy", "Supervisor", "Gripper fault", "Success"],
           ["Scripted teacher (baseline)", "on", "yes", "7/10"],
           ["SmolVLA v2 · OpenVINO iGPU", "off", "none", RESULTS["v2_sup_off"]],
           ["SmolVLA v2 · OpenVINO iGPU", "on", "none", RESULTS["v2_sup_on"]],
+          ["SmolVLA v2 · OpenVINO iGPU", "off", "yes", RESULTS["v2_fault_sup_off"]],
           ["SmolVLA v2 · OpenVINO iGPU", "on", "yes", RESULTS["v2_fault_sup_on"]]],
-      0.6, 1.9, [5.2, 2.2, 2.2, 2.4], 17, highlight_col=3)
-text(s, "The supervisor turns 2/10 into 7/10 for the teacher under a real gripper fault. "
-        "Every number comes from committed result files with run manifests.", 0.6, 5.7, 12.2, 1.2, 16, MUTED)
+      0.6, 1.75, [5.2, 2.2, 2.2, 2.4], 16, highlight_col=3)
+text(s, "Pairs change one thing: same seeds and fault, supervisor on vs off. For the teacher it turns 2/10 into 7/10. "
+        "Every number comes from committed result files with run manifests.", 0.6, 6.0, 12.2, 1.2, 15, MUTED)
 
 # 8 — Intel
 s = slide("Running the policy on an Intel laptop", "INTEL OPTIMIZATION")

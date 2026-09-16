@@ -18,7 +18,7 @@ from rescuehandsai.auditor import compute_facts
 from rescuehandsai.perturb import GripperGlitch
 from rescuehandsai.policies.scripted import ScriptedPolicy
 from rescuehandsai.runner import EpisodeRunner
-from rescuehandsai.showcase import ShowcaseRenderer
+from rescuehandsai.showcase import ShowcaseRenderer, scene_identity
 from rescuehandsai.sim import MujocoSimulation
 from rescuehandsai.task import make_task
 
@@ -46,18 +46,25 @@ def replay(args):
     seed, policy = int(data["seed"]), str(data["policy"])
     sim = MujocoSimulation()
     sim.reset(seed, instruction=str(data["instruction"]))
+    if "scene_sha256" not in data:
+        raise SystemExit(f"{args.states} has no scene identity (saved before it was recorded); cannot prove the replay scene matches")
+    if str(data["scene_sha256"]) != scene_identity(sim) and not args.allow_scene_mismatch:
+        raise SystemExit("this checkout builds a different scene (config, scene code or robot asset) than the "
+                         "evaluation did; replay from the evaluation's revision, or pass --allow-scene-mismatch")
+    control_dt = float(data["control_dt"])
     renderer = ShowcaseRenderer(args.width, args.height)
     who = "learned policy (SmolVLA)" if "smolvla" in policy else "scripted teacher"
     args.video.mkdir(parents=True, exist_ok=True)
     for camera in args.cameras.split(","):
         path = args.video / f"{args.states.stem.replace('_states', '')}_{camera}.mp4"
-        with imageio.get_writer(path, fps=20 // args.every, codec="libx264", quality=8, macro_block_size=1) as writer:
+        with imageio.get_writer(path, fps=1.0 / (control_dt * args.every), codec="libx264", quality=8,
+                                macro_block_size=1) as writer:
             for i in range(0, len(data["qpos"]), args.every):
                 state = str(data["runner_state"][i])
                 colour = (255, 170, 60, 255) if state == "RECOVERING" else (120, 220, 160, 255)
                 frame = renderer.draw(sim, data["qpos"][i], camera)
                 writer.append_data(label_frame(frame, [
-                    (f"{who} · seed {seed} · t = {i * 0.05:4.1f} s sim · {state}", colour),
+                    (f"{who} · seed {seed} · t = {float(data['sim_time'][i]):4.2f} s sim · {state}", colour),
                     (f"“{data['instruction']}”", (225, 232, 240, 255))]))
         print("wrote", path, flush=True)
     renderer.close()
@@ -75,6 +82,8 @@ def main():
     parser.add_argument("--height", type=int, default=720)
     parser.add_argument("--states", type=Path, help="replay a saved evaluation episode instead of running the teacher")
     parser.add_argument("--every", type=int, default=2, help="with --states: draw every Nth control step")
+    parser.add_argument("--allow-scene-mismatch", action="store_true",
+                        help="replay even if this checkout builds a different scene than the evaluation (not recommended)")
     args = parser.parse_args()
     if args.states:
         if not args.video:

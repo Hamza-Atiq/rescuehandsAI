@@ -100,7 +100,13 @@ def main():
         # weights, config, and the processors that hold the normalizer statistics
         hashed = [p for p in sorted(args.checkpoint.iterdir()) if p.is_file() and
                   (p.suffix == ".safetensors" or p.name == "config.json" or p.name.startswith("policy_"))]
-        contract = build_contract(names, dataset=args.dataset, dataset_revision=dataset.revision,
+        try:  # the dataset's immutable Hub commit, not only its version tag
+            from huggingface_hub import HfApi
+            dataset_commit = HfApi().dataset_info(args.dataset).sha
+        except Exception as exc:  # offline or local-only dataset: say so instead of guessing
+            dataset_commit = f"unavailable ({type(exc).__name__})"
+        report["dataset_commit"] = dataset_commit
+        contract = build_contract(names, dataset=args.dataset, dataset_revision=f"{dataset.revision}@{dataset_commit}",
                                   control_hz=args.control_hz, source=str(args.checkpoint),
                                   files={p.name: file_sha256(p) for p in hashed})
         report["contract"] = str(write_contract(args.checkpoint, contract))

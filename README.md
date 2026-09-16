@@ -85,7 +85,7 @@ fault clock runs the same way with and without recovery.
 
 Success is physical and checked over 10 consecutive control steps: cup and
 utensil inside their zones, released, resting on the table or plate, cup axis
-within 15° of vertical, low linear and angular speed, spare utensil untouched, and
+within 15° of vertical, low linear and angular speed, the spare utensil released, still and near its start **at the end** (earlier contact is not tracked), and
 an **ordered in-air hand-off** (right hand alone → both hands while airborne →
 left hand alone). Dropping the utensil and picking it up with the other hand does
 not count.
@@ -107,8 +107,8 @@ commit, before the September 16 audit fixes. An independent review
 ([report](docs/research/2026-09-15-independent-code-review.md)) and a later quality
 audit ([report](docs/research/2026-09-16-quality-audit.md)) tightened the success
 checks: a hand-off may not have more than 5 control steps with no hand on the
-utensil (measured teacher maximum: 1), and the spare utensil must be untouched and
-still. Every scripted episode on seeds 0–9 kept the same result and step count
+utensil (measured teacher maximum: 1), and at the end the spare utensil must have no
+gripper contact and be still. Every scripted episode on seeds 0–9 kept the same result and step count
 after those changes.
 
 ### Intel optimization

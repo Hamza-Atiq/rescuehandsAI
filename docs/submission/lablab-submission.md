@@ -40,7 +40,7 @@ auditor reads simulator state that the policy never sees: is the item held by bo
 jaws, supported, in its zone, dropped? When an item really drops, the supervisor opens
 both hands, returns to a safe pose, and lets the policy try again, at most twice.
 Success is measured from physics, never from the policy's claim. It requires both
-items stable in their zones, released and upright, the spare utensil untouched, and an
+items stable in their zones, released and upright, the spare utensil still near its start at the end, and an
 ordered in-air hand-off.
 
 *Intel optimization.* The fine-tuned policy is exported with Intel Physical AI Studio
@@ -52,8 +52,8 @@ reported together with its action difference from the FP32 reference.
 *Results (10 randomized seeds).*
 - Scripted teacher: 8/10 clean. With a real gripper fault: 2/10 without the
   supervisor, 7/10 with it.
-- SmolVLA v2 on the iGPU: ⟨x⟩/10 clean with the supervisor, ⟨y⟩/10 without it,
-  ⟨z⟩/10 with the fault and the supervisor.
+- SmolVLA v2 on the iGPU, same 10 seeds: ⟨x⟩/10 clean with the supervisor, ⟨y⟩/10 without it;
+  with the gripper fault ⟨z⟩/10 with the supervisor vs ⟨w⟩/10 without it.
 - Inference: ⟨a⟩ s per 50-action chunk on the iGPU vs ⟨b⟩ s in PyTorch on the CPU
   (⟨c⟩× faster), max action difference ⟨d⟩ rad.
 
@@ -81,8 +81,9 @@ MuJoCo · SmolVLA · LeRobot · Vision-Language-Action · Bimanual Manipulation 
   - ⟨the 10 seeds of the supervised fault run of SmolVLA v2 on the iGPU⟩
   - the showcase renders from `scripts/render_showcase.py`
   - one benchmark table
-- **Slide presentation:** ⟨6 slides⟩: problem, task, architecture, learned policy
-  and data, results with limits, Intel optimization.
+- **Slide presentation:** `docs/submission/rescuehands_slides.pdf` (10 slides: problem, task,
+  architecture, learned policy and data, safety, results, Intel optimization, limits,
+  reproducibility, links). ⟨Fill the v2 numbers in make_slides.py RESULTS and rebuild.⟩
 
 ## 💻 App hosting and repository
 
