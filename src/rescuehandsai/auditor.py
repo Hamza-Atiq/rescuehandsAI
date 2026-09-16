@@ -18,7 +18,7 @@ class AuditFacts:
     time: float
     held_by: dict        # item -> arms whose fixed AND moving jaw touch it
     touching: dict       # item -> arms with any gripper contact
-    supported: dict      # item -> resting on table, plate or another item
+    supported: dict      # item -> touching a world surface: the table, plate or mat
     in_zone: dict        # item -> zone name or None
     height: dict         # item -> centre z (m)
     speed: dict          # item -> linear speed (m/s)
@@ -27,6 +27,7 @@ class AuditFacts:
     positions: dict = None  # item -> (x, y, z)
     up_z: dict = None       # item -> world z of the body's up axis (1 upright, -1 upside down)
     angular_speed: dict = None  # item -> rad/s
+    on_item: dict = None    # item -> other items it leans on (never counted as support)
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,7 @@ def compute_facts(sim) -> AuditFacts:
     touch_fixed = {i: set() for i in SCENE_ITEMS}
     touch_moving = {i: set() for i in SCENE_ITEMS}
     supported = dict.fromkeys(SCENE_ITEMS, False)
+    on_item = {i: set() for i in SCENE_ITEMS}
     cross = False
     for c in data.contact:
         if c.dist > 0:
@@ -70,8 +72,10 @@ def compute_facts(sim) -> AuditFacts:
                 touch_fixed[item].add(fixed[other])
             elif other in moving:
                 touch_moving[item].add(moving[other])
-            elif other_arm is None:  # world (table, plate) or another item
+            elif other == 0:  # the world body: table, plate or mat, a real surface
                 supported[item] = True
+            elif other_arm is None:  # leaning against another item is not support
+                on_item[item].add(item_body.get(other, "scene"))
     zones = sim.scene_config["zones"]
     thx, thy = sim.scene_config["table"]["half_size"]
     tcx, tcy = sim.scene_config["table"]["center"]
@@ -95,7 +99,7 @@ def compute_facts(sim) -> AuditFacts:
         time=float(data.time),
         held_by={i: touch_fixed[i] & touch_moving[i] for i in SCENE_ITEMS},
         touching={i: touch_fixed[i] | touch_moving[i] for i in SCENE_ITEMS},
-        supported=supported, in_zone=in_zone, height=height, speed=speed,
+        supported=supported, on_item=on_item, in_zone=in_zone, height=height, speed=speed,
         out_of_bounds=oob, cross_arm_contact=cross, positions=positions, up_z=up_z, angular_speed=spin)
 
 

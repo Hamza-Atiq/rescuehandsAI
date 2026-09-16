@@ -20,6 +20,7 @@ from pathlib import Path
 import numpy as np
 
 from rescuehandsai.perturb import GripperGlitch
+from rescuehandsai.randomize import perturb_start
 from rescuehandsai.runner import EpisodeRunner
 from rescuehandsai.scene import ROOT
 from rescuehandsai.sim import VIDEO_CAMERAS, MujocoSimulation
@@ -89,6 +90,9 @@ def main():
     parser.add_argument("--max-steps", type=int, default=None,
                         help="override the task timeout (default: task.timeout_s / control_dt)")
     parser.add_argument("--video", action="store_true")
+    parser.add_argument("--perturb", action="store_true",
+                        help="start off-nominal: arms nudged, items shifted (robustness check)")
+    parser.add_argument("--perturb-scale", type=float, default=1.0, help="largest perturbation, 0-1")
     parser.add_argument("--name", help="run folder name under results/")
     args = parser.parse_args()
     if args.policy == "smolvla" and not (args.export and (args.export / "manifest.json").is_file()):
@@ -106,7 +110,9 @@ def main():
         fault = GripperGlitch() if args.fault == "glitch" else None
         video = VideoWriter(out / f"episode_{seed}.mp4", every=2, fps=10) if args.video else None
         runner = EpisodeRunner(sim, policy, supervisor=args.supervisor == "on", fault=fault,
-                               max_steps=args.max_steps, on_frame=video)
+                               max_steps=args.max_steps, on_frame=video,
+                               on_reset=(lambda sim_, task_: perturb_start(sim_, task_.seed, max_scale=args.perturb_scale))
+                               if args.perturb else None)
         try:
             log = runner.run(task)
         finally:
@@ -128,7 +134,9 @@ def main():
     summary = {
         "run": name, "created_utc": stamp, "git_revision": git_revision(),
         "policy": episodes[0]["policy"] if episodes else None, "supervisor": args.supervisor == "on",
-        "fault": args.fault, "seeds": list(args.seeds), "episodes": n, "max_steps_override": args.max_steps,
+        "fault": args.fault, "perturbed_start": args.perturb,
+        "perturb_scale": args.perturb_scale if args.perturb else None,
+        "seeds": list(args.seeds), "episodes": n, "max_steps_override": args.max_steps,
         "success_rate": len(successes) / n if n else None, "successes": len(successes),
         "failures": failures,
         "collision_episodes": sum(any(ev["label"] == "COLLISION" for ev in e["events"]) for e in episodes),

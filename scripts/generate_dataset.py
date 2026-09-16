@@ -41,6 +41,8 @@ def main():
     parser.add_argument("--vcodec", default="libsvtav1")
     parser.add_argument("--perturb", action="store_true",
                         help="start from an off-nominal state (arms nudged, items shifted and spun)")
+    parser.add_argument("--perturb-scale", type=float, default=0.6,
+                        help="largest perturbation, 0-1; measured teacher success: 1.0 -> 35%%, 0.6 -> see README")
     args = parser.parse_args()
     if set(args.seeds) & set(EVAL_SEEDS):
         parser.error("seeds 0-9 are reserved for evaluation")
@@ -56,11 +58,7 @@ def main():
         for seed in args.seeds:
             task = make_task(seed)
             sim.reset(seed, instruction=task.instruction)
-            if args.perturb:
-                perturbation = perturb_start(sim, seed)
-            else:  # contacts only exist after a step, and "resting on the table" needs them
-                perturbation = None
-                sim.settle(5)
+            perturbation = perturb_start(sim, seed, max_scale=args.perturb_scale) if args.perturb else None
             start = compute_facts(sim)
             invalid = start_problems(start, sim.scene_params)
             expert = ScriptedExpert(sim, task)

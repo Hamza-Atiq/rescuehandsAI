@@ -65,11 +65,11 @@ def setup():
 SIM_ENV = {"MUJOCO_GL": "egl", "PYOPENGL_PLATFORM": "egl", "PYTHONPATH": str(ROOT / "src")}
 
 
-def shard_run(script: str, roots_and_seeds, tag: str, repo: str):
+def shard_run(script: str, roots_and_seeds, tag: str, repo: str, extra=()):
     """Run one generator per shard in parallel; every shard writes its own log."""
     procs = []
     for root, (start, stop) in roots_and_seeds:
-        cmd = [PY, script, "--root", root, "--repo-id", repo, "--seeds", f"{start}:{stop}"]
+        cmd = [PY, script, "--root", root, "--repo-id", repo, "--seeds", f"{start}:{stop}", *extra]
         log = open(ROOT / f"{Path(root).name}.log", "w")
         procs.append(subprocess.Popen(list(map(str, cmd)), cwd=ROOT,
                                       env={**os.environ, **SIM_ENV}, stdout=log, stderr=subprocess.STDOUT))
@@ -93,13 +93,18 @@ def merge_and_push(repo: str, roots, out_root: Path):
 
 
 def data(hf_user: str, episodes: int, shards: int, first_seed: int, recovery_episodes: int = 0,
-         repo_name: str = "rescuehands_table", base_dataset: str | None = None):
+         repo_name: str = "rescuehands_table", base_dataset: str | None = None,
+         perturbed_episodes: int = 0, perturb_scale: float = 0.6):
     """Generate clean demonstrations, optionally recovery demonstrations, and push the merge.
 
-    Recovery episodes contain an injected gripper fault, the supervisor's stop-and-retreat
-    and the teacher's second attempt, so the learned policy sees how to get back on track
-    instead of only flawless trajectories. `base_dataset` is an existing Hub dataset
-    (e.g. the first clean run) that is downloaded and merged in as well.
+    Three kinds of demonstration, because a policy trained only on flawless runs has
+    never seen the states it reaches once it drifts:
+      clean      the tidy table, teacher succeeds first time
+      perturbed  arms nudged off home and items shifted/spun, teacher solves from there
+      recovery   an injected gripper fault, the supervisor's stop-and-retreat, second attempt
+    Measured teacher success at perturb scale 0.6: 11/16 with the arms nudged, 8/16 with
+    items moved, so expect roughly half of perturbed attempts to be kept.
+    `base_dataset` is an existing Hub dataset that is downloaded and merged in as well.
     """
     repo = f"{hf_user}/{repo_name}"
     roots = []
@@ -108,6 +113,13 @@ def data(hf_user: str, episodes: int, shards: int, first_seed: int, recovery_epi
         clean = [(f"data/clean{i}", (first_seed + i * per, first_seed + (i + 1) * per)) for i in range(shards)]
         shard_run("scripts/generate_dataset.py", clean, "data_clean", repo)
         roots += [ROOT / root for root, _ in clean]
+    if perturbed_episodes:
+        per_p = -(-int(perturbed_episodes * 2.0) // shards)  # about half of these attempts are kept
+        start = first_seed + 50000
+        rough = [(f"data/perturbed{i}", (start + i * per_p, start + (i + 1) * per_p)) for i in range(shards)]
+        shard_run("scripts/generate_dataset.py", rough, "data_perturbed", repo,
+                  extra=["--perturb", "--perturb-scale", str(perturb_scale)])
+        roots += [ROOT / root for root, _ in rough]
     if recovery_episodes:
         per_rec = -(-int(recovery_episodes * 1.6) // shards)  # recovery attempts fail more often
         start = first_seed + 100000
@@ -207,6 +219,9 @@ def main():
     parser.add_argument("--episodes", type=int, default=120, help="clean demonstrations to keep")
     parser.add_argument("--recovery-episodes", type=int, default=0,
                         help="demonstrations with an injected drop and the teacher's recovery")
+    parser.add_argument("--perturbed-episodes", type=int, default=0,
+                        help="demonstrations that start off-nominal (arms nudged, items moved)")
+    parser.add_argument("--perturb-scale", type=float, default=0.6)
     parser.add_argument("--dataset-name", default="rescuehands_table")
     parser.add_argument("--base-dataset", help="existing Hub dataset to merge into the new one")
     parser.add_argument("--init-from", default="lerobot/smolvla_base",
@@ -231,7 +246,7 @@ def main():
         setup()
     if args.stage in ("data", "all"):
         data(args.hf_user, args.episodes, args.shards, args.first_seed, args.recovery_episodes,
-             args.dataset_name, args.base_dataset)
+             args.dataset_name, args.base_dataset, args.perturbed_episodes, args.perturb_scale)
     if args.stage == "probe":
         probe(args.hf_user, args.batch_size)
     dataset_repo = f"{args.hf_user}/{args.dataset_name}"
