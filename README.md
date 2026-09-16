@@ -1,226 +1,159 @@
-# RescueHands AI — a dinner table that survives a dropped fork
+# RescueHands AI — a dinner table that survives a drop
 
-Two simulated SO-101 arms in MuJoCo set a dinner place from a spoken-style
-instruction: the right arm picks the **named** utensil (fork or spoon), hands
-it to the left arm, the left arm places it beside the plate, and the right arm
-places the cup. A deterministic, physics-aware **supervisor** watches every
-control step. When an item really drops, it stops, moves both arms to safety
-and lets the policy try again, instead of blindly continuing.
+**Two simulated SO-101 arms set a dinner place from a spoken instruction.** A fine-tuned
+**SmolVLA** policy runs on an **Intel iGPU through OpenVINO**. A physics-aware
+**supervisor** watches every step, catches real drops and missed grasps, and makes the
+robot retry safely instead of carrying on blindly.
+
+> A VLA should not be trusted just because it produced an action. Check what physically
+> happened — and recover.
 
 | In-air hand-off | Both grippers on the fork |
 | --- | --- |
-| ![Right arm hands the fork to the left arm above the table](docs/media/teacher_handoff_wide.jpg) | ![Close view of both grippers holding the fork during the hand-off](docs/media/teacher_handoff_close.jpg) |
+| ![Right arm hands the fork to the left arm above the table](docs/media/teacher_handoff_wide.jpg) | ![Close view of both grippers holding the fork](docs/media/teacher_handoff_close.jpg) |
 | **Gripper fault: the fork drops, the arms back off** | **Table set: fork left of the plate, cup right** |
-| ![The fork has fallen onto the mat and the right arm retreats before retrying](docs/media/teacher_drop_recovery.jpg) | ![Finished place setting with the fork and cup in their zones](docs/media/teacher_table_set.jpg) |
+| ![The fork has fallen and the right arm retreats before retrying](docs/media/teacher_drop_recovery.jpg) | ![Finished place setting](docs/media/teacher_table_set.jpg) |
 
-<sub>Scripted demonstration teacher, seed 1, drawn with `scripts/render_showcase.py`
-(presentation cameras only; the policy's own cameras are unchanged). Learned-policy
-frames will be added from the final evaluation.</sub>
+<sub>Frames of the scripted demonstration teacher (seed 1), drawn from presentation
+cameras with `scripts/render_showcase.py`. The learned-policy demo is in the video.</sub>
 
-> **Thesis:** a VLA should not be trusted just because it produced an action.
-> A useful bimanual system checks what physically happened and recovers safely.
+**Intel Physical AI Track · built on:** Intel Physical AI Studio · OpenVINO · SO-101 · MuJoCo · SmolVLA / LeRobot
 
-Built for the Intel **Bimanual VLA Manipulation** online track (AI Infra Summit
-Hackathon 2026). Status: **work in progress** — see [Results](#results) for what
-is measured and what is still pending.
+---
 
-## What makes it different
+## The task
 
-| | |
-| --- | --- |
-| Real two-arm teamwork | An in-air hand-off; both arms must hold the utensil for success. |
-| Language matters | Fork *and* spoon lie on the mat in random order; only the instruction says which one. |
-| Honest physics | Contact grasps only. No welding, no teleporting. Success is measured from simulator state, never from the policy's claim. |
-| Failure awareness | Auditor labels `OBJECT_DROPPED`, `FAILED_GRASP`, `COLLISION` (between the two arms), `TIMEOUT`… plus a progress watchdog for grasps that never start. |
-| Bounded recovery | Open, retreat to a safe pose, retry — at most twice. |
-| Intel deployment | SmolVLA exported with Intel Physical AI Studio to OpenVINO and run on an Intel CPU and iGPU. |
+"*Hand the spoon over to the left arm, then place the cup next to the plate.*"
+
+1. The **right arm** picks the named utensil. Fork and spoon lie in random order, so the words decide which one.
+2. It passes the utensil to the **left arm in the air**.
+3. The left arm places it beside the plate, and the right arm places the cup.
+
+Every seed changes positions, sizes, mass, lighting and table colour. Grasps are real
+contacts: nothing is welded or teleported.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
   I["Instruction"] --> P
-  C["3 cameras<br/>overhead, left wrist, right wrist"] --> P
+  C["3 cameras<br/>overhead + both wrists"] --> P
   S["12 joint positions"] --> P
-  P["SmolVLA policy<br/>(OpenVINO on Intel CPU/iGPU)"] --> G["Action guard<br/>limits + step size"]
-  G --> M["MuJoCo physics<br/>2x SO-101 + dinner table"]
-  M --> A["Physics auditor<br/>held? dropped? placed? collided?"]
-  A -->|ok| P
-  A -->|drop / stalled grasp| R["Supervisor recovery<br/>open, safe pose, retry (max 2)"]
+  P["SmolVLA policy<br/>OpenVINO · Intel iGPU"] --> G["Action guard<br/>joint limits + step size"]
+  G --> M["MuJoCo physics<br/>2× SO-101 + dinner table"]
+  M --> A["Physics auditor<br/>held? dropped? placed?"]
+  A -->|on track| P
+  A -->|drop / missed grasp| R["Supervisor<br/>open, safe pose, retry ≤ 2"]
   R --> P
-  A --> E["Evaluation<br/>stable, supported, in zone, hand-off"]
+  A --> E["Success check<br/>zones · upright · hand-off"]
 ```
 
-Policy-visible data: camera images, joint positions, instruction. Simulator
-ground truth (object poses, contacts) is used only by the auditor, the
-evaluation and the scripted teacher — never as policy input.
+- **The policy sees only** camera images, joint positions and the instruction.
+- **Ground truth is kept apart:** object poses and contacts are used only by the
+  auditor, the success check and the demonstration teacher.
+- **No inverse kinematics in deployment:** SmolVLA outputs the 12 joint targets. IK
+  exists only in the scripted teacher that makes training data.
 
-### Where inverse kinematics is used
+## Workload placement
 
-Only inside the **scripted teacher** (`expert.py`), which generates the training
-demonstrations and serves as the baseline row. At deployment, SmolVLA outputs
-the 12 joint targets directly; there is no IK in the learned control loop.
+| Workload | Where | Why |
+| --- | --- | --- |
+| Demonstration generation (569 episodes, 3 cameras) | Kaggle Tesla T4, rendering through EGL on the GPU | CPU rendering took 229 s per episode; GPU rendering 14 s |
+| SmolVLA fine-tuning (fp16 autocast) | Kaggle Tesla T4 | 1.5 s/step; Intel does not provide training hardware |
+| OpenVINO export (Intel Physical AI Studio) | Kaggle CPU (195 s), reproduced on the Intel laptop | Weights byte-identical on both machines (`smolvla.bin` SHA-256 `778f9b55…`) |
+| **Policy inference + simulation + supervisor + evaluation** | **Intel Core i5-6300U + Intel HD Graphics 520** | Organizer rule: the policy runs on Intel hardware |
 
-## Results
+## Hardware optimization choices
 
-All numbers come from files under `results/` produced by `scripts/evaluate.py`
-and `scripts/benchmark_intel.py`. Each run folder has a `manifest.json` (code
-revision, uncommitted-change flag and diff hash, arguments, package versions)
-written before the first episode, and a `summary.json` updated after every episode
-(runs made before September 16 afternoon lack the manifest; their folders say so).
-The scripted rows below are committed in `results/audit_final_*`. Evaluation seeds 0–9 are never
-used for training data (training seeds start at 1000), but they did guide debugging
-of the scripted teacher, so they are not a pristine unseen set.
+- **OpenVINO on the Intel iGPU:** 50-action chunks in **4.53 s mean** (p95 5.26 s,
+  341 calls, measured during the v2 evaluation). The same trained model ran at
+  about 190 s per chunk in PyTorch on the laptop CPU (v1 smoke benchmark, laptop under
+  load: `results/audit_c1_benchmark_smoke`).
+- **Action chunking:** 25 of each 50 predicted actions are executed before the next
+  inference, so the slow step runs once per 1.25 s of robot time.
+- **Rendering without shadows** for the policy cameras: 6× faster offscreen rendering
+  on the iGPU, with the same setting in training and deployment.
+- **Model contracts:** every checkpoint and export carries its joint order, camera map,
+  control rate and file hashes, and inference refuses a mismatch.
 
-### Task success on 10 randomized seeds
+## Results (10 randomized seeds, 0–9)
 
-Each seed randomizes item positions, cup size, mass, friction, utensil size and
-order, lighting and table colour. **Limit, measured:** the gripper pads have a
-higher MuJoCo contact priority with a fixed friction of 1.0, so the randomized item
-friction changes table and item-to-item contacts but **not** the jaw grasp itself
-(seed 0: sampled cup friction 0.717, every jaw contact used 1.0). These results
-therefore do not show robustness to slippery grasps. "Gripper glitch" forces the holding hand open
-for 0.5 s of simulated time after the utensil is lifted (a real physical drop); the
-fault clock runs the same way with and without recovery.
-
-Success is physical and checked over 10 consecutive control steps: cup and
-utensil inside their zones, released, resting on the table or plate, cup axis
-within 15° of vertical, low linear and angular speed, the spare utensil released, still and near its start **at the end** (earlier contact is not tracked), and
-an **ordered in-air hand-off** (right hand alone → both hands while airborne →
-left hand alone). Dropping the utensil and picking it up with the other hand does
-not count.
-
-| Policy | Supervisor | Fault | Success | Notes |
+| Policy | Supervisor | Gripper fault | Full success | Notes |
 | --- | --- | --- | ---: | --- |
-| Scripted teacher (baseline) | on | none | 8/10 | seed 6 planning error, seed 9 recovery budget exhausted |
-| Scripted teacher (baseline) | off | gripper glitch | 2/10 | the teacher's own re-grasp saves 2 drops (seeds 0, 4); 8 end in `FAILED_GRASP` |
-| Scripted teacher (baseline) | on | gripper glitch | **7/10** | 2 recovery budgets exhausted (seeds 6, 8), 1 planning error (seed 9) |
-| SmolVLA v1 (OpenVINO, iGPU) | off | none | 1 of 9 completed | seeds 0–8 of an **interrupted** run (seed 9 has no result): seed 4 succeeded; 5 × `OBJECT_OUT_OF_BOUNDS`, 3 × `TIMEOUT`. Not a 10-seed result. Made before run manifests existed: see `results/smolvla_ov-gpu_sup-off_fault-none/PROVENANCE.md`. |
-| SmolVLA (OpenVINO, iGPU) | on | none / gripper glitch | pending | |
+| Scripted teacher (baseline) | on | — | 8/10 | |
+| Scripted teacher (baseline) | off | yes | 2/10 | |
+| Scripted teacher (baseline) | on | yes | **7/10** | supervisor turns 2 into 7 |
+| **SmolVLA v2 · OpenVINO iGPU** | on | yes | **1/10** | hand-off completed in 4/10, utensil placed 4/10, cup placed 2/10; seed 4 recovered from a real drop and set the table |
+| SmolVLA v2 · OpenVINO iGPU | off | yes | running | same seeds and fault, supervisor off — the matched comparison |
 
-"Collision" in these results means contact **between the two arms**; arm–table
-and arm–plate contacts are not yet detected or counted.
+**What the learned result shows:**
+- **The safety loop works.** Every drop and every missed grasp was detected, labelled
+  and followed by a safe retry.
+- **The learned grasp is not yet reliable.** In the failed seeds the utensil
+  rose at most 1.1 cm, compared with 8.7 cm in the success.
+- **Likely cause: too little training on the new data.** v2 saw each new
+  demonstration frame 0.28 times on average (6,000 steps × 16 over 336,729 frames).
 
-History: the no-supervisor fault row was 0/10 until the teacher learned to
-re-grasp a dropped utensil (commit `7767ee5`); a bisect shows the same 2/10 at that
-commit, before the September 16 audit fixes. An independent review
-([report](docs/research/2026-09-15-independent-code-review.md)) and a later quality
-audit ([report](docs/research/2026-09-16-quality-audit.md)) tightened the success
-checks: a hand-off may not have more than 5 control steps with no hand on the
-utensil (measured teacher maximum: 1), and at the end the spare utensil must have no
-gripper contact and be still. Every scripted episode on seeds 0–9 kept the same result and step count
-after those changes.
+Every number comes from committed files in `results/`, each with a `manifest.json`
+recording the code revision, arguments and package versions.
 
-### Intel optimization
+**Honest limits:**
+- Collision checks cover arm-to-arm contact only.
+- Randomized item friction does not reach the jaw contacts.
+- Simulation pauses during inference, so this is not real-time 20 Hz control.
+- The spare-utensil check looks at the final state only.
 
-Pretrained SmolVLA spike (FP32, random inputs, before fine-tuning):
+## Models and data
 
-| Device | Mean per 50-step chunk |
-| --- | ---: |
-| Intel HD Graphics 520 iGPU (OpenVINO) | 4.68 s |
-| Intel Core i5-6300U CPU (OpenVINO) | 30.8 s (measured under CPU contention; re-measurement pending) |
-
-The final benchmark (`scripts/benchmark_intel.py`) compares PyTorch CPU,
-OpenVINO FP32 on CPU, FP32/FP16 execution on the iGPU, NNCF INT8 weights and
-model caching, each with its action difference from the FP32 reference.
-**Pending** on the fine-tuned model. Simulation time pauses during inference;
-latency is reported separately as wall-clock time.
-
-### Hardware statement
-
-Organizers allowed other Intel platforms when optimizations are documented. The
-demo and benchmarks run on an **Intel Core i5-6300U with Intel HD Graphics 520**
-(not Core Ultra). Training and bulk data generation used a cloud GPU, which the
-challenge allows. No Core Ultra numbers are claimed.
+| | |
+| --- | --- |
+| Fine-tuned policy | [ABDHAM/smolvla_rescuehands_v2](https://huggingface.co/ABDHAM/smolvla_rescuehands_v2), plus its OpenVINO export in `openvino_fp32/` |
+| Dataset (569 episodes, 336,729 frames) | [ABDHAM/rescuehands_table_v2](https://huggingface.co/datasets/ABDHAM/rescuehands_table_v2) (commit `ca9e5592`) |
+| v1 policy / dataset | [ABDHAM/smolvla_rescuehands](https://huggingface.co/ABDHAM/smolvla_rescuehands) / [ABDHAM/rescuehands_table](https://huggingface.co/datasets/ABDHAM/rescuehands_table) |
 
 ## Reproduce
 
-Requires Python 3.12 and [uv](https://docs.astral.sh/uv/). Three environments
-are kept separate because their dependencies conflict:
-
-| Env | Purpose | Key packages |
-| --- | --- | --- |
-| `.venv-sim` | simulation, teacher, tests, scripted evaluation | MuJoCo 3.13.0 |
-| `.venv-pai` | data recording, export, SmolVLA inference, benchmark | Physical AI Studio 0.1.0, LeRobot 0.5.1, OpenVINO 2026.1, NNCF |
-| Kaggle `.venv-train` | GPU data generation and SmolVLA fine-tuning | LeRobot 0.5.1 |
+Requires Python 3.12 and [uv](https://docs.astral.sh/uv/). Commands use Git Bash on Windows.
 
 ```bash
-# 1. core environment (Windows: use your standalone Python 3.12 path)
+# 1. simulation environment + SO-101 model (Apache-2.0, pinned revision)
 UV_PROJECT_ENVIRONMENT=.venv-sim uv sync --frozen --python 3.12
-
-# 2. SO-101 model (Apache-2.0, pinned revision)
 git clone --filter=blob:none --sparse https://github.com/google-deepmind/mujoco_menagerie.git .cache/menagerie
 git -C .cache/menagerie sparse-checkout set robotstudio_so101
 git -C .cache/menagerie checkout 8161bba264d7fa7c99ca301e91e7fb44737676ad
 
-# 3. tests (99 unit and physics tests)
-.venv-sim/Scripts/python.exe -m unittest discover -s tests -v
-
-# 4. watch the teacher live, with a dropped utensil and recovery
-PYTHONPATH=src .venv-sim/Scripts/python.exe scripts/watch.py --seed 0 --fault glitch
-
-# 5. scripted baseline on the 10 evaluation seeds
+# 2. tests (100 unit and physics tests) and the scripted baseline
+PYTHONPATH=src .venv-sim/Scripts/python.exe -m unittest discover -s tests
 PYTHONPATH=src .venv-sim/Scripts/python.exe scripts/evaluate.py --policy scripted --seeds 0:10 --supervisor on --fault glitch
 
-# 6. Physical AI Studio environment
+# 3. Intel environment (Physical AI Studio + OpenVINO)
 uv venv .venv-pai --python 3.12
 uv pip install --python .venv-pai/Scripts/python.exe --extra-index-url https://download.pytorch.org/whl/cpu \
   "physicalai-train[smolvla,cpu]==0.1.0" "lerobot[dataset]==0.5.1" "transformers==5.3.0" nncf mujoco==3.13.0 imageio psutil
 
-# 7. data + training on a Kaggle GPU notebook (Internet on, HF_TOKEN secret)
-python training/kaggle_pipeline.py --hf-user <you> --stage setup
-bash training/kaggle_gpu_render.sh          # draw camera images on the GPU, not the CPU
-python training/kaggle_pipeline.py --hf-user <you> --stage data --episodes 200 --perturbed-episodes 200 --recovery-episodes 100
-python training/kaggle_pipeline.py --hf-user <you> --stage train --steps 12000   # verifies and uploads task_contract.json
+# 4. fetch the OpenVINO export (hash-checked) and run the learned policy on the Intel iGPU
+bash scripts/deploy_learned.sh ABDHAM/smolvla_rescuehands_v2 v2 fetch-export eval
 
-# 8. download (contract hash check), export to OpenVINO, evaluate on the iGPU, benchmark
-bash scripts/deploy_learned.sh <you>/smolvla_rescuehands_v2 v2 download export eval bench
-# or step by step:
-PYTHONPATH=src .venv-pai/Scripts/python.exe scripts/export_openvino.py --checkpoint models/smolvla_rescuehands --out models/openvino/fp32
-PYTHONPATH=src .venv-pai/Scripts/python.exe scripts/evaluate.py --policy smolvla --export models/openvino/fp32 --device GPU --seeds 0:10 --supervisor on --fault glitch --video
-PYTHONPATH=src .venv-pai/Scripts/python.exe scripts/benchmark_intel.py --export models/openvino/fp32
+# 5. retrain from scratch on a Kaggle GPU notebook (optional)
+python training/kaggle_pipeline.py --hf-user <you> --stage setup
+bash training/kaggle_gpu_render.sh
+python training/kaggle_pipeline.py --hf-user <you> --stage data --episodes 200 --perturbed-episodes 200 --recovery-episodes 100
+python training/kaggle_pipeline.py --hf-user <you> --stage train --steps 6000 --lr 5e-5 --init-from ABDHAM/smolvla_rescuehands
+python training/kaggle_pipeline.py --hf-user <you> --stage export
 ```
 
-## Project layout
+## Repository map
 
-| Path | Responsibility |
+| Path | What it does |
 | --- | --- |
-| `src/rescuehandsai/scene.py` | Seeded dinner-table MJCF: table, plate, mats, cup, fork, spoon, lights, cameras |
-| `src/rescuehandsai/sim.py` | The only module that owns MuJoCo state; named joints, cameras, fault injection |
-| `src/rescuehandsai/control.py` | Rejects wrong names, non-finite values, stale commands, limit and step violations |
-| `src/rescuehandsai/auditor.py` | Physics facts (held by both jaws, supported, zones, collisions) and debounced failure events |
-| `src/rescuehandsai/runner.py` | Episode state machine, action guard, supervisor, recovery, progress watchdog |
-| `src/rescuehandsai/evaluation.py` | Physical task success: in zone, supported, upright, released, settled, hand-off, spare utensil in place |
-| `src/rescuehandsai/expert.py`, `kinematics.py`, `motion.py` | Scripted teacher (IK, contact grasps, hand-off) for data and baseline |
-| `src/rescuehandsai/perturb.py` | Seeded gripper-glitch fault |
-| `src/rescuehandsai/recorder.py`, `scripts/generate_dataset.py` | LeRobot dataset recording (successful episodes only) |
-| `src/rescuehandsai/policies/` | Scripted and exported-SmolVLA policies behind one contract |
-| `training/kaggle_pipeline.py` | GPU data generation and SmolVLA fine-tuning |
-| `src/rescuehandsai/contract.py` | Model contract: joint order, cameras, units, rate and file hashes travel with the model |
-| `src/rescuehandsai/showcase.py`, `scripts/render_showcase.py` | Presentation renders from nicer cameras (policy cameras untouched) |
-| `scripts/evaluate.py`, `scripts/benchmark_intel.py` | Seeded evaluation (manifest + per-episode summary, optional video); Intel benchmark |
-| `scripts/deploy_learned.sh`, `scripts/export_openvino.py` | Laptop deployment: download, contract check, OpenVINO export, evaluations |
-| `scripts/review_*.py`, `scripts/spike_*.py` | Dated one-off probes from reviews and the OpenVINO spike (kept for traceability) |
-| `results/audit_final_*`, `results/smolvla_*` | Committed evidence behind the README numbers |
-| `docs/research/` | Independent reviews and audits (dated history) |
-| `docs/superpowers/` | Design spec and implementation plans |
-| `docs/media/` | README images |
+| `src/rescuehandsai/` | Scene, simulation, auditor, supervisor/runner, success rules, contracts, policies |
+| `training/` | Kaggle pipeline: data, fine-tuning, verification, OpenVINO export |
+| `scripts/` | `evaluate.py`, `benchmark_intel.py`, `deploy_learned.sh`, `render_showcase.py`, `export_openvino.py` |
+| `results/` | Committed evidence behind every number |
+| `docs/submission/` | Write-up, slides, cover |
+| `docs/research/` | Independent audits and how they were resolved |
 
-## Design notes learned by measurement
+## License
 
-- A straight-down SO-101 hand has only ~8 cm of vertical travel mid-table, so
-  the teacher grasps with the hand tilted 1.2–1.4 rad.
-- The fixed jaw sits 2 cm off the fingertip frame; grasps aim it 5–8 mm outside
-  the object and 7 mm below the handle centre, otherwise fingertips pinch an edge and slip.
-- The wrist camera mount sticks out 6 cm; jaw directions are chosen per arm so
-  the cameras never meet during the hand-off.
-- Sideways pushes up to 15 N and a low-friction "slip" did not dislodge a held
-  utensil, so recovery is tested with a gripper glitch that really drops it.
-- Shadows made offscreen rendering 6× slower on the iGPU; they are off for both
-  training data and deployment so the policy sees identical images.
-
-## Licenses
-
-Project code: MIT (see `LICENSE`). SO-101 model: Apache-2.0, from
-google-deepmind/mujoco_menagerie (derived from TheRobotStudio SO-ARM100),
-downloaded separately. Table items are primitive shapes created for this project.
+Project code: MIT. SO-101 model: Apache-2.0, from google-deepmind/mujoco_menagerie
+(downloaded separately). Table items are primitive shapes made for this project.
