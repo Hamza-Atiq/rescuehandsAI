@@ -31,6 +31,10 @@ class PlanningError(RuntimeError):
     """The teacher could not find a reachable pose. Label: TARGET_MISSED."""
 
 
+class LostItemError(RuntimeError):
+    """The item is not where the plan assumes. Recoverable: the message names the label."""
+
+
 class ScriptedExpert:
     def __init__(self, sim, task: TaskSpec, subtasks=SUBTASKS):
         unknown = set(subtasks) - set(SUBTASKS)
@@ -218,6 +222,11 @@ class ScriptedExpert:
         yield Move(q_r_high, 30, "handoff_carry")
         yield Move(q_r, 15, "handoff_present")
         yield Move({}, 6, "handoff_settle")
+        # Plan the left grasp only if the right hand really still holds it. Otherwise the
+        # utensil is lying somewhere on the table and this plan would reach into empty space
+        # (or out of the left arm's range); ask for a recovery instead of crashing the episode.
+        if right not in compute_facts(self.sim).held_by[item]:
+            raise LostItemError(f"FAILED_GRASP: the right hand is not holding the {item} at the hand-off")
         # Left grasp point comes from where the utensil really is now (physics may shift it).
         pos, axis = self._utensil_frame(item)
         center = pos + g["neck"] * axis

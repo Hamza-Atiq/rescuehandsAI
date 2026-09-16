@@ -46,18 +46,24 @@ class HandoffTracker:
         return self.done
 
 
-def task_outcome(facts, task, handoff_done: bool, scene_params) -> dict:
+def task_outcome(facts, task, handoff_done: bool, scene_params, start_positions=None) -> dict:
     """Physical success for the dinner task from final auditor facts.
 
     `handoff_done` comes from a HandoffTracker that watched the whole episode.
-    `scene_params` gives the cup size and the spare utensil's starting pose.
+    `scene_params` gives the cup size. `start_positions` is where the items really
+    were when this episode began (auditor facts at reset); it matters whenever the
+    start is perturbed, because "the spare utensil was not touched" means "it did
+    not move from *this* episode's start", not from the scene's nominal layout.
     """
     if not isinstance(handoff_done, bool):
         raise TypeError("handoff_done must be a bool from HandoffTracker")
     if facts.up_z is None or facts.angular_speed is None:
         raise ValueError("facts need up_z and angular_speed for the success check")
     other = next(u for u in UTENSILS if u != task.utensil)
-    sx, sy, _ = scene_params.poses[other]
+    if start_positions is None:
+        sx, sy, _ = scene_params.poses[other]
+    else:
+        sx, sy, _ = start_positions[other]
     ox, oy, _ = facts.positions[other]
     items = ("cup", task.utensil)
     checks = {

@@ -83,6 +83,41 @@ class MujocoSimulation:
         self.contact_samples = 0
         self.faults = {}
 
+    # -- start-state edits (dataset generation only; never during an episode) ----
+    def set_start_pose(self, targets: dict):
+        """Place the arms at `targets` and make them the current command history."""
+        missing = set(self.names) - set(targets)
+        if missing:
+            raise ValueError(f"start pose is missing joints: {sorted(missing)}")
+        for name in self.names:
+            low, high = self.limits[name]
+            if not low - 1e-9 <= targets[name] <= high + 1e-9:
+                raise ValueError(f"start pose for {name} is outside its limits")
+        self.data.qpos[self._qpos] = [targets[n] for n in self.names]
+        self.data.qvel[self._qvel] = 0.0
+        self.data.ctrl[self._actuators] = [targets[n] for n in self.names]
+        mujoco.mj_forward(self.model, self.data)
+        self.previous = dict(targets)
+
+    def set_item_pose(self, item: str, position, yaw_delta: float = 0.0):
+        """Move a loose item on the table and spin it about the vertical axis."""
+        from .randomize import quaternion_product, yaw_quaternion
+        joint = self._item_joint[item]
+        adr = int(self.model.jnt_qposadr[joint.id])
+        dof = int(self.model.jnt_dofadr[joint.id])
+        self.data.qpos[adr:adr + 3] = np.asarray(position, dtype=float)
+        if yaw_delta:
+            self.data.qpos[adr + 3:adr + 7] = quaternion_product(yaw_quaternion(yaw_delta),
+                                                                 self.data.qpos[adr + 3:adr + 7])
+        self.data.qvel[dof:dof + 6] = 0.0
+        mujoco.mj_forward(self.model, self.data)
+
+    def settle(self, steps: int):
+        """Advance physics holding the current command, so a moved item comes to rest."""
+        for _ in range(steps * self.substeps):
+            mujoco.mj_step(self.model, self.data)
+        mujoco.mj_forward(self.model, self.data)
+
     # -- observations --------------------------------------------------------
     def render(self, cameras: dict, width=None, height=None) -> dict:
         width = width or self.config["width"]

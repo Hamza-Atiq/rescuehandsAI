@@ -14,6 +14,11 @@ from pathlib import Path
 
 from rescuehandsai.auditor import compute_facts
 from rescuehandsai.evaluation import HandoffTracker, task_outcome
+from rescuehandsai.randomize import perturb_start, start_problems
+
+
+class SkipEpisode(Exception):
+    """The starting state itself is not a valid table, so the attempt is not a demonstration."""
 from rescuehandsai.expert import ScriptedExpert
 from rescuehandsai.recorder import EpisodeRecorder
 from rescuehandsai.sim import MujocoSimulation
@@ -34,6 +39,8 @@ def main():
     parser.add_argument("--repo-id", required=True)
     parser.add_argument("--seeds", type=seed_range, required=True, help="start:stop")
     parser.add_argument("--vcodec", default="libsvtav1")
+    parser.add_argument("--perturb", action="store_true",
+                        help="start from an off-nominal state (arms nudged, items shifted and spun)")
     args = parser.parse_args()
     if set(args.seeds) & set(EVAL_SEEDS):
         parser.error("seeds 0-9 are reserved for evaluation")
@@ -49,10 +56,19 @@ def main():
         for seed in args.seeds:
             task = make_task(seed)
             sim.reset(seed, instruction=task.instruction)
+            if args.perturb:
+                perturbation = perturb_start(sim, seed)
+            else:  # contacts only exist after a step, and "resting on the table" needs them
+                perturbation = None
+                sim.settle(5)
+            start = compute_facts(sim)
+            invalid = start_problems(start, sim.scene_params)
             expert = ScriptedExpert(sim, task)
             started = time.time()
-            handoff, steps, error = HandoffTracker(task.utensil), 0, None
+            handoff, steps, error = HandoffTracker(task.utensil), 0, invalid
             try:
+                if invalid:
+                    raise SkipEpisode(invalid)
                 while not expert.done and steps < MAX_STEPS:
                     obs = sim.observe(images=True)
                     action = expert.act(obs)
@@ -62,7 +78,8 @@ def main():
                     steps += 1
             except Exception as exc:  # planning or safety stop: not a demonstration
                 error = f"{type(exc).__name__}: {exc}"
-            outcome = task_outcome(compute_facts(sim), task, handoff.done, sim.scene_params) if error is None else {"success": False}
+            outcome = (task_outcome(compute_facts(sim), task, handoff.done, sim.scene_params, start.positions)
+                       if error is None else {"success": False})
             keep = error is None and expert.done and outcome["success"]
             if keep:
                 recorder.save()
@@ -70,7 +87,7 @@ def main():
             else:
                 recorder.discard()
             record = {"seed": seed, "utensil": task.utensil, "instruction": task.instruction, "steps": steps,
-                      "saved": keep, "error": error, "outcome": outcome,
+                      "saved": keep, "error": error, "outcome": outcome, "perturbed": bool(perturbation),
                       "wall_s": round(time.time() - started, 1)}
             log.write(json.dumps(record) + "\n")
             log.flush()

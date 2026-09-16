@@ -130,6 +130,39 @@ class EpisodeRunner:
                 action = BimanualAction(self.sim.observe().timestamp, dict(follower.targets))
                 self._step(action, log, None, task, "RECOVERING")
 
+    def _recover(self, log, task, events, monitor, holders, handoff, progress, policy, facts):
+        """Bounded recovery: open both hands, return home, let the policy re-plan.
+
+        Returns fresh facts, or None when the episode must stop (budget or a new failure)."""
+        if log.recoveries >= log.max_recoveries:
+            log.events.append({"label": "RECOVERY_EXHAUSTED", "time": facts.time})
+            log.state, log.failure = "FAILED", "RECOVERY_EXHAUSTED"
+            return None
+        log.recoveries += 1
+        log.state = "RECOVERING"
+        for event in events:
+            if event.item is not None:
+                monitor.reset_expectation(event.item)
+                self._last_holder.pop(event.item, None)
+            if event.item == task.utensil:
+                holders.clear()
+                handoff.reset()
+                progress["pick_utensil"] = progress["handoff"] = False
+        try:
+            self._safe_pose(log, task)
+        except EpisodeBudgetExceeded:
+            log.events.append({"label": "TIMEOUT", "time": float(self.sim.data.time)})
+            log.state, log.failure = "FAILED", "TIMEOUT"
+            return None
+        except (ValueError, RuntimeError) as exc:
+            label = "COLLISION" if "COLLISION" in str(exc) else "SIMULATION_ERROR"
+            log.events.append({"label": label, "time": facts.time, "detail": str(exc)})
+            log.state, log.failure = "FAILED", label
+            return None
+        policy.after_recovery(self.sim, task, progress)
+        log.state = "EXECUTING"
+        return compute_facts(self.sim)
+
     # -- episode -------------------------------------------------------------------
     def run(self, task) -> EpisodeLog:
         sim, policy = self.sim, self.policy
@@ -149,6 +182,7 @@ class EpisodeRunner:
         stall_limit = max(1, round(self.stall_seconds / sim.config["control_dt"]))
         stall, fingerprint = 0, None
         facts, stable, done_steps, started = compute_facts(sim), 0, 0, time.perf_counter()
+        start_positions = dict(facts.positions)
         max_delta = sim.config["max_command_delta"]
         while log.state in ("EXECUTING", "RECOVERING"):
             if log.steps >= log.max_steps:
@@ -170,9 +204,18 @@ class EpisodeRunner:
                 log.state, log.failure = "FAILED", "INVALID_ACTION"
                 break
             except RuntimeError as exc:
-                label = str(exc).split(":")[0] if str(exc).startswith(("COLLISION", "SIMULATION_ERROR")) \
-                    else "POLICY_ERROR"
+                known = ("COLLISION", "SIMULATION_ERROR", *RECOVERABLE)
+                label = str(exc).split(":")[0] if str(exc).startswith(known) else "POLICY_ERROR"
                 log.events.append({"label": label, "time": facts.time, "detail": str(exc)})
+                # A policy may report a recoverable situation it cannot handle itself
+                # (the teacher does this when the item is no longer in the hand it planned for).
+                if label in RECOVERABLE and self.supervisor:
+                    asked = [FailureEvent(label, facts.time, task.utensil, None)]
+                    facts = self._recover(log, task, asked, monitor, holders, handoff, progress, policy, facts)
+                    if facts is None:
+                        break
+                    done_steps, stall, fingerprint, stable = 0, 0, None, 0
+                    continue
                 log.state, log.failure = "FAILED", label
                 break
             facts = compute_facts(sim)
@@ -203,37 +246,12 @@ class EpisodeRunner:
                 break
             recoverable = [e for e in events if e.label in RECOVERABLE]
             if recoverable and self.supervisor:
-                if log.recoveries >= log.max_recoveries:
-                    log.events.append({"label": "RECOVERY_EXHAUSTED", "time": facts.time})
-                    log.state, log.failure = "FAILED", "RECOVERY_EXHAUSTED"
+                facts = self._recover(log, task, recoverable, monitor, holders, handoff, progress, policy, facts)
+                if facts is None:
                     break
-                log.recoveries += 1
-                log.state = "RECOVERING"
-                for e in recoverable:
-                    if e.item is not None:
-                        monitor.reset_expectation(e.item)
-                        self._last_holder.pop(e.item, None)
-                    if e.item == task.utensil:
-                        holders.clear()
-                        handoff.reset()
-                        progress["pick_utensil"] = progress["handoff"] = False
-                try:
-                    self._safe_pose(log, task)
-                except EpisodeBudgetExceeded:
-                    log.events.append({"label": "TIMEOUT", "time": float(sim.data.time)})
-                    log.state, log.failure = "FAILED", "TIMEOUT"
-                    break
-                except (ValueError, RuntimeError) as exc:
-                    label = "COLLISION" if "COLLISION" in str(exc) else "SIMULATION_ERROR"
-                    log.events.append({"label": label, "time": facts.time, "detail": str(exc)})
-                    log.state, log.failure = "FAILED", label
-                    break
-                facts = compute_facts(sim)
-                policy.after_recovery(sim, task, progress)
                 done_steps, stall, fingerprint, stable = 0, 0, None, 0
-                log.state = "EXECUTING"
                 continue
-            outcome = task_outcome(facts, task, handoff.done, sim.scene_params)
+            outcome = task_outcome(facts, task, handoff.done, sim.scene_params, start_positions)
             stable = stable + 1 if outcome["success"] else 0
             if stable >= self.settle_steps:
                 log.state = "SUCCEEDED"
@@ -245,7 +263,7 @@ class EpisodeRunner:
                     log.state, log.failure = "FAILED", "TARGET_MISSED"
         sim.set_actuator_fault("right_arm/gripper", None)
         sim.set_actuator_fault("left_arm/gripper", None)
-        log.outcome = task_outcome(compute_facts(sim), task, handoff.done, sim.scene_params)
+        log.outcome = task_outcome(compute_facts(sim), task, handoff.done, sim.scene_params, start_positions)
         log.sim_seconds = float(sim.data.time)
         log.wall_seconds = round(time.perf_counter() - started, 2)
         return log
