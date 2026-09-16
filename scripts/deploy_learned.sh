@@ -39,9 +39,12 @@ for stage in $stages; do
         out=results/smolvla_${name}_sup-$1_fault-$2
         if [ -f "$out/summary.json" ] && grep -q '"complete": true' "$out/summary.json"; then log "eval: $out complete"; continue; fi
         [ -d "$out" ] && { log "eval: $out is incomplete; move it aside to re-run"; exit 1; }
-        log "eval: $out (about 5 min per seed)"
+        # the demo video comes from the supervised fault run (it shows drops and recoveries);
+        # front-camera video costs ~2-3 extra minutes per seed on the HD 520, so only there
+        video=""; if [ "$1 $2" = "on glitch" ]; then video="--video"; fi
+        log "eval: $out (about 4-5 min per seed${video:+, with video})"
         $PY scripts/evaluate.py --policy smolvla --export "$export_dir" --device GPU --seeds 0:10 \
-            --supervisor "$1" --fault "$2" --name "smolvla_${name}_sup-$1_fault-$2"
+            --supervisor "$1" --fault "$2" --name "smolvla_${name}_sup-$1_fault-$2" $video
       done
       ;;
     bench)
