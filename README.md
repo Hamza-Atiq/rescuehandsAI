@@ -21,7 +21,7 @@ is measured and what is still pending.
 | Real two-arm teamwork | An in-air hand-off; both arms must hold the utensil for success. |
 | Language matters | Fork *and* spoon lie on the mat in random order; only the instruction says which one. |
 | Honest physics | Contact grasps only. No welding, no teleporting. Success is measured from simulator state, never from the policy's claim. |
-| Failure awareness | Auditor labels `OBJECT_DROPPED`, `FAILED_GRASP`, `COLLISION`, `TIMEOUT`… plus a progress watchdog for grasps that never start. |
+| Failure awareness | Auditor labels `OBJECT_DROPPED`, `FAILED_GRASP`, `COLLISION` (between the two arms), `TIMEOUT`… plus a progress watchdog for grasps that never start. |
 | Bounded recovery | Open, retreat to a safe pose, retry — at most twice. |
 | Intel deployment | SmolVLA exported with Intel Physical AI Studio to OpenVINO and run on an Intel CPU and iGPU. |
 
@@ -54,15 +54,21 @@ the 12 joint targets directly; there is no IK in the learned control loop.
 ## Results
 
 All numbers come from files under `results/` produced by `scripts/evaluate.py`
-and `scripts/benchmark_intel.py`; the scripted rows are committed in
-`results/scripted_v2_*` (code revision `484d2bd`). Evaluation seeds 0–9 are never
+and `scripts/benchmark_intel.py`. Each run folder has a `manifest.json` (code
+revision, uncommitted-change flag and diff hash, arguments, package versions)
+written before the first episode, and a `summary.json` updated after every episode.
+The scripted rows below are committed in `results/audit_final_*`. Evaluation seeds 0–9 are never
 used for training data (training seeds start at 1000), but they did guide debugging
 of the scripted teacher, so they are not a pristine unseen set.
 
 ### Task success on 10 randomized seeds
 
 Each seed randomizes item positions, cup size, mass, friction, utensil size and
-order, lighting and table colour. "Gripper glitch" forces the holding hand open
+order, lighting and table colour. **Limit, measured:** the gripper pads have a
+higher MuJoCo contact priority with a fixed friction of 1.0, so the randomized item
+friction changes table and item-to-item contacts but **not** the jaw grasp itself
+(seed 0: sampled cup friction 0.717, every jaw contact used 1.0). These results
+therefore do not show robustness to slippery grasps. "Gripper glitch" forces the holding hand open
 for 0.5 s of simulated time after the utensil is lifted (a real physical drop); the
 fault clock runs the same way with and without recovery.
 
@@ -75,16 +81,24 @@ not count.
 
 | Policy | Supervisor | Fault | Success | Notes |
 | --- | --- | --- | ---: | --- |
-| Scripted teacher (baseline) | on | none | 8/10 | 2 failures: one planning error (seed 6), one recovery budget exhausted (seed 9) |
-| Scripted teacher (baseline) | off | gripper glitch | 0/10 | every drop breaks the task (teacher cannot plan from the dropped pose) |
-| Scripted teacher (baseline) | on | gripper glitch | **7/10** | recovered 7 of 10 drops; 2 recovery budgets exhausted (seeds 6, 8), 1 planning error (seed 9) |
+| Scripted teacher (baseline) | on | none | 8/10 | seed 6 planning error, seed 9 recovery budget exhausted |
+| Scripted teacher (baseline) | off | gripper glitch | 2/10 | the teacher's own re-grasp saves 2 drops (seeds 0, 4); 8 end in `FAILED_GRASP` |
+| Scripted teacher (baseline) | on | gripper glitch | **7/10** | 2 recovery budgets exhausted (seeds 6, 8), 1 planning error (seed 9) |
+| SmolVLA v1 (OpenVINO, iGPU) | off | none | 1 of 9 completed | seeds 0–8 of an **interrupted** run (seed 9 has no result): seed 4 succeeded; 5 × `OBJECT_OUT_OF_BOUNDS`, 3 × `TIMEOUT`. Not a 10-seed result. |
+| SmolVLA (OpenVINO, iGPU) | on | none / gripper glitch | pending | |
 
-An independent review ([report](docs/research/2026-09-15-independent-code-review.md))
-found that the fault clock paused during recovery and that some success sub-checks
-were too weak. After the fixes the rows above were re-measured: the clean and
-no-supervisor rows are unchanged, and the supervised fault row moved from 6/10 to 7/10.
-| SmolVLA (OpenVINO, iGPU) | off | none | pending | |
-| SmolVLA (OpenVINO, iGPU) | on | gripper glitch | pending | |
+"Collision" in these results means contact **between the two arms**; arm–table
+and arm–plate contacts are not yet detected or counted.
+
+History: the no-supervisor fault row was 0/10 until the teacher learned to
+re-grasp a dropped utensil (commit `7767ee5`); a bisect shows the same 2/10 at that
+commit, before the September 16 audit fixes. An independent review
+([report](docs/research/2026-09-15-independent-code-review.md)) and a later quality
+audit ([report](docs/research/2026-09-16-quality-audit.md)) tightened the success
+checks: a hand-off may not have more than 5 control steps with no hand on the
+utensil (measured teacher maximum: 1), and the spare utensil must be untouched and
+still. Every scripted episode on seeds 0–9 kept the same result and step count
+after those changes.
 
 ### Intel optimization
 

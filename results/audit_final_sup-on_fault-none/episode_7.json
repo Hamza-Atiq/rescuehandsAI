@@ -1,0 +1,38 @@
+{
+  "seed": 7,
+  "policy": {
+    "name": "scripted_teacher",
+    "backend": "python",
+    "device": "cpu",
+    "checkpoint": null,
+    "privileged_state": true,
+    "note": "IK teacher; baseline and demonstration source only"
+  },
+  "instruction": "Pick up the fork and hand it to the left hand. Then move the cup to its spot by the plate.",
+  "supervisor": true,
+  "fault": null,
+  "state": "SUCCEEDED",
+  "steps": 533,
+  "events": [],
+  "recoveries": 0,
+  "clamped_joint_steps": 0,
+  "inference_calls": 0,
+  "inference_seconds": [],
+  "fault_step": null,
+  "max_steps": 1500,
+  "max_recoveries": 2,
+  "outcome": {
+    "success": true,
+    "cup_in_zone": true,
+    "utensil_in_zone": true,
+    "handoff": true,
+    "released": true,
+    "supported": true,
+    "cup_upright": true,
+    "settled": true,
+    "spare_utensil_in_place": true
+  },
+  "failure": null,
+  "sim_seconds": 26.649999999998983,
+  "wall_seconds": 14.37
+}

@@ -1,7 +1,7 @@
 [project]
 name = "rescuehandsai"
 version = "0.1.0"
-description = "Add your description here"
+description = "Two simulated SO-101 arms set a dinner place with SmolVLA, a physics-aware supervisor and OpenVINO inference"
 readme = "README.md"
 authors = [
     { name = "Hamza Atiq", email = "hamzaatiq34@gmail.com" }

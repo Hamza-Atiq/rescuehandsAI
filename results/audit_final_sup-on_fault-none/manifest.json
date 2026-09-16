@@ -1,0 +1,76 @@
+{
+  "run": "audit_final_sup-on_fault-none",
+  "created_utc": "20260916-110227",
+  "source": {
+    "git_revision": "f4dd314c3af6560d6a5d3eed7227110e19a85044",
+    "dirty": true,
+    "changed_files": [
+      "README.md",
+      "assets/README.md",
+      "docs/superpowers/specs/2026-09-15-dinner-table-design.md",
+      "pyproject.toml"
+    ],
+    "diff_sha256": "d3e461a003b726159276a21f6299c7ddf3ec11db3d3ae3c124061d2fef881c98"
+  },
+  "args": {
+    "policy": "scripted",
+    "export": null,
+    "device": "GPU",
+    "n_action_steps": 25,
+    "seeds": "range(0, 10)",
+    "supervisor": "on",
+    "fault": "none",
+    "max_steps": null,
+    "video": false,
+    "perturb": false,
+    "perturb_scale": 1.0,
+    "name": "audit_final_sup-on_fault-none"
+  },
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
+  ],
+  "policy": {
+    "name": "scripted_teacher",
+    "backend": "python",
+    "device": "cpu",
+    "checkpoint": null,
+    "privileged_state": true,
+    "note": "IK teacher; baseline and demonstration source only"
+  },
+  "sim_config": {
+    "asset_path": ".cache/menagerie/robotstudio_so101/so101.xml",
+    "asset_revision": "8161bba264d7fa7c99ca301e91e7fb44737676ad",
+    "physics_dt": 0.005,
+    "control_dt": 0.05,
+    "max_action_age": 0.05,
+    "max_command_delta": 0.15,
+    "width": 256,
+    "height": 256,
+    "render_shadows": false,
+    "home": [
+      0,
+      -0.9,
+      0.5,
+      1.6,
+      0,
+      0.3
+    ],
+    "instruction": "Prepare the two arms for the dinner-table task."
+  },
+  "packages": {
+    "mujoco": "3.13.0",
+    "numpy": "2.5.3"
+  },
+  "python": "3.12.10",
+  "processor": "Intel64 Family 6 Model 78 Stepping 3, GenuineIntel",
+  "platform": "Windows-10-10.0.19045-SP0"
+}

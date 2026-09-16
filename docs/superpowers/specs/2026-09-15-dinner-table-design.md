@@ -41,6 +41,10 @@ to the left hand." Paraphrases are generated from templates.
 2. Right arm picks the named utensil (fork or spoon) and lifts it to a hand-off pose.
 3. Left arm grasps, right arm releases, left arm places it left of the plate.
 
+> **Changed during implementation (2026-09-15, measured):** the order is utensil
+> first (steps 2–3), then the cup (step 1). Swinging a 20 cm utensil after the cup
+> was placed knocked the cup over. The code (`task.SUBTASKS`) is authoritative.
+
 Language matters: the tray holds both utensils, so the instruction and camera
 decide which one to move.
 
