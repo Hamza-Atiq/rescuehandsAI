@@ -282,6 +282,14 @@ def main():
     args = parser.parse_args()
     if args.first_seed < 10:
         parser.error("seeds 0-9 are reserved for evaluation")
+    for flag in ("episodes", "recovery_episodes", "perturbed_episodes"):
+        if getattr(args, flag) < 0:
+            parser.error(f"--{flag.replace('_', '-')} cannot be negative")
+    for flag in ("shards", "steps", "batch_size", "save_freq", "gpus"):
+        if getattr(args, flag) < 1:
+            parser.error(f"--{flag.replace('_', '-')} must be at least 1")
+    if not 0 < args.perturb_scale <= 1:
+        parser.error("--perturb-scale must be in (0, 1]")
     if args.stage in ("setup", "all"):
         setup()
     if args.stage in ("data", "all"):

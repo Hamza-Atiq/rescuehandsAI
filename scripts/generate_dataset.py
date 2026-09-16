@@ -20,7 +20,7 @@ from rescuehandsai.randomize import perturb_start, start_problems, start_warning
 class SkipEpisode(Exception):
     """The starting state itself is not a valid table, so the attempt is not a demonstration."""
 from rescuehandsai.expert import ScriptedExpert
-from rescuehandsai.recorder import EpisodeRecorder
+from rescuehandsai.recorder import EpisodeRecorder, fps_for
 from rescuehandsai.sim import MujocoSimulation, is_software_renderer
 from rescuehandsai.task import make_task
 
@@ -57,7 +57,7 @@ def main():
         parser.error(f"camera images would be drawn on the CPU ({renderer}), ~4 min per episode; "
                      "on Kaggle run training/kaggle_gpu_render.sh first, or pass --allow-cpu-render")
     recorder = EpisodeRecorder(args.root, args.repo_id, sim.names, sim.config["height"],
-                               sim.config["width"], vcodec=args.vcodec)
+                               sim.config["width"], fps=fps_for(sim.config["control_dt"]), vcodec=args.vcodec)
     log_path = args.root.parent / f"{args.root.name}_attempts.jsonl"
     saved = 0
     with log_path.open("w", encoding="utf-8") as log:

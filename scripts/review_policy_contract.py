@@ -13,6 +13,7 @@ from unittest.mock import patch
 import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+from rescuehandsai.contract import build_contract, file_sha256, write_contract
 from rescuehandsai.contracts import Observation
 from rescuehandsai.policies.smolvla_exported import ExportedSmolVLAPolicy, to_chw_float
 
@@ -33,10 +34,13 @@ class ContractTests(unittest.TestCase):
         fake = ModuleType("physicalai.inference.model")
         fake.InferenceModel = SpyModel
         names = tuple(f"joint_{i}" for i in range(12))
+        # the maintained version of this check is tests/test_smolvla_adapter.py (normal test discovery)
         with tempfile.TemporaryDirectory() as td, patch.dict(sys.modules, {"physicalai.inference.model": fake}):
             Path(td, "manifest.json").write_text("{}")
+            write_contract(Path(td), build_contract(names, dataset="spy", control_hz=20.0, source="spy",
+                                                    files={"manifest.json": file_sha256(Path(td, "manifest.json"))}))
             policy = ExportedSmolVLAPolicy(Path(td), names, n_action_steps=2)
-            policy.reset(SimpleNamespace(names=names), None)
+            policy.reset(SimpleNamespace(names=names, config={"control_dt": 0.05}), None)
             images = {name: np.full((256, 256, 3), value, np.uint8)
                       for name, value in (("overhead", 0), ("left_wrist", 127), ("right_wrist", 255))}
             obs = Observation(0, "pass the spoon", dict(zip(names, range(12))), {}, images)

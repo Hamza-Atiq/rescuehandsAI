@@ -40,7 +40,9 @@ def main():
         recorder = EpisodeRecorder(tmp / "ds", "local/profile", sim.names, sim.config["height"], sim.config["width"])
 
     cost = defaultdict(float)
+    steps = 0
     for _ in range(args.steps):
+        steps += 1
         t = time.perf_counter()
         frames = sim.render(POLICY_CAMERAS)
         cost["render 3 cameras"] += time.perf_counter() - t
@@ -67,10 +69,11 @@ def main():
             break
 
     total = sum(cost.values())
-    print(f"\nper step over {args.steps} steps (ms):")
+    print(f"\nper step over {steps} steps actually run (ms):")
     for name, secs in sorted(cost.items(), key=lambda kv: -kv[1]):
-        print(f"  {name:20s} {1000 * secs / args.steps:8.1f}   ({100 * secs / total:4.1f}%)")
-    print(f"  {'TOTAL':20s} {1000 * total / args.steps:8.1f}  -> ~{total / args.steps * 566:.0f} s per 566-step episode")
+        print(f"  {name:20s} {1000 * secs / steps:8.1f}   ({100 * secs / total:4.1f}%)")
+    print(f"  {'TOTAL':20s} {1000 * total / steps:8.1f}  -> ~{total / steps * 566:.0f} s per 566-step episode")
+    print("  (not measured: encoding a kept episode's video and dataset finalize)")
     if recorder:
         recorder.discard()
     sim.close()

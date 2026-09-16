@@ -24,6 +24,14 @@ def features(joint_names, height: int, width: int) -> dict:
     return feats
 
 
+def fps_for(control_dt: float) -> int:
+    """Dataset frame rate from the simulator's control interval; it must be a whole number."""
+    rate = 1.0 / control_dt
+    if not abs(rate - round(rate)) < 1e-9 or round(rate) < 1:
+        raise ValueError(f"control_dt {control_dt} gives a non-integer frame rate {rate}")
+    return round(rate)
+
+
 class EpisodeRecorder:
     def __init__(self, root: Path, repo_id: str, joint_names, height: int, width: int,
                  fps: int = FPS, vcodec: str = "libsvtav1"):
