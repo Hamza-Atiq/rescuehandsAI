@@ -61,11 +61,23 @@ def model_digest(export_dir: Path) -> str:
     return h.hexdigest()
 
 
+INT8_DONE = ".complete"
+
+
+def int8_complete(fp32_dir: Path, int8_dir: Path) -> bool:
+    """A cached INT8 model counts only if compression finished and every file it needs is there."""
+    needed = ["smolvla.xml", "smolvla.bin"] + [n for n in ("manifest.json", "tokenizer.xml", "tokenizer.bin")
+                                              if (fp32_dir / n).exists()]
+    return (int8_dir / INT8_DONE).is_file() and all((int8_dir / n).is_file() for n in needed)
+
+
 def make_int8(fp32_dir: Path, int8_dir: Path):
     """Compress once per (source model, mode); int8_dir is named after both."""
     import nncf
-    if (int8_dir / "smolvla.xml").is_file():
+    if int8_complete(fp32_dir, int8_dir):
         return
+    if int8_dir.exists():  # an interrupted earlier compression: start again, never reuse half a model
+        shutil.rmtree(int8_dir)
     int8_dir.mkdir(parents=True, exist_ok=True)
     model = ov.Core().read_model(fp32_dir / "smolvla.xml")
     compressed = nncf.compress_weights(model, mode=getattr(nncf.CompressWeightsMode, INT8_MODE))
@@ -73,6 +85,16 @@ def make_int8(fp32_dir: Path, int8_dir: Path):
     for name in ("manifest.json", "tokenizer.xml", "tokenizer.bin"):
         if (fp32_dir / name).exists():
             shutil.copy2(fp32_dir / name, int8_dir / name)
+    (int8_dir / INT8_DONE).write_text("ok")
+
+
+REFERENCE = "cpu_fp32"
+
+
+def ordered_variants(names):
+    """The accuracy reference runs first, whatever order was asked for, so every row can be compared."""
+    names = [n for n in names if n]
+    return sorted(names, key=lambda n: n != REFERENCE)
 
 
 def time_model(label, factory, inputs, runs):
@@ -127,7 +149,7 @@ def main():
     truncated = inputs.pop("_truncated")
     source_sha256 = model_digest(args.export)
 
-    wanted = args.variants.split(",")
+    wanted = ordered_variants(args.variants.split(","))
     int8_dir = (out.parent / f"openvino_int8_{INT8_MODE.lower()}_{source_sha256[:16]}"
                 if "int8" in args.variants else None)
     if int8_dir:
@@ -154,7 +176,7 @@ def main():
                 variants[name]()
             row, actions = time_model(name, variants[name], inputs, args.runs)
             actions = actions.reshape(-1, actions.shape[-1])[:EXECUTED_ACTIONS]
-            if reference is None and name == "cpu_fp32":
+            if reference is None and name == REFERENCE:
                 reference = actions
             if reference is not None:
                 diff = np.abs(actions - reference)
@@ -170,7 +192,6 @@ def main():
             import torch
             from physicalai.data.observation import Observation
             from physicalai.policies.smolvla import SmolVLA
-            policy = SmolVLA(pretrained_name_or_path=str(args.torch_checkpoint)).eval()
             # The Intel PyTorch policy takes its own Observation, not the flat dict the
             # exported runtime accepts; Observation.to_dict() produces images.images.cameraN.
             batch = Observation(
@@ -178,11 +199,19 @@ def main():
                 images={f"images.{slot}": torch.from_numpy(inputs[image_keys[CAMERA_SLOTS[slot]]])
                         for slot in CAMERA_SLOTS})
 
-            class TorchCall:
-                def __call__(self, _):
+            def torch_factory():  # loading happens inside the timer and memory window, like OpenVINO
+                policy = SmolVLA(pretrained_name_or_path=str(args.torch_checkpoint)).eval()
+
+                def call(_):
                     with torch.inference_mode():
                         return policy.predict_action_chunk(batch).numpy()
-            row, _ = time_model("cpu_pytorch", TorchCall, inputs, max(2, args.runs // 2))
+                return call
+            row, actions = time_model("cpu_pytorch", torch_factory, inputs, max(2, args.runs // 2))
+            actions = actions.reshape(-1, actions.shape[-1])[:EXECUTED_ACTIONS]
+            if reference is not None:
+                diff = np.abs(actions - reference)
+                row["max_abs_action_diff_rad"] = round(float(diff.max()), 5)
+                row["mean_abs_action_diff_rad"] = round(float(diff.mean()), 5)
             rows.insert(0, row)
         except Exception as exc:
             rows.insert(0, {"variant": "cpu_pytorch", "error": f"{type(exc).__name__}: {exc}"[:500]})
@@ -196,7 +225,9 @@ def main():
         "cpu": platform.processor(), "platform": platform.platform(),
         "observation": "dinner scene seed 0, three 256x256 cameras, real joint state and instruction",
         "int8_compression_s": compress_s if int8_dir else None, "rows": rows,
-        "note": "Accuracy column compares the first 25 executed actions to OpenVINO FP32 on CPU.",
+        "accuracy_reference": REFERENCE if reference is not None else None,
+        "note": "Accuracy column compares the first 25 executed actions to OpenVINO FP32 on CPU "
+                "(run first); load_s and rss_delta_mb include model construction for every row, PyTorch too.",
     }
     (out / "benchmark.json").write_text(json.dumps(report, indent=2))
     lines = ["| Variant | Load s | First call s | Mean s | p95 s | Max action diff (rad) |",
