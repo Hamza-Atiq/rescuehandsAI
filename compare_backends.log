@@ -1,0 +1,21 @@
+D:\AI Journey\AI in 2026\Ai_infra_Sumit_hackathon\rescuehandsAI\.venv-pai\Lib\site-packages\glfw\__init__.py:917: GLFWError: (65542) b'WGL: The driver does not appear to support OpenGL'
+  warnings.warn(message, GLFWError)
+Traceback (most recent call last):
+  File "D:\AI Journey\AI in 2026\Ai_infra_Sumit_hackathon\rescuehandsAI\scripts\compare_backends.py", line 121, in <module>
+    main()
+  File "D:\AI Journey\AI in 2026\Ai_infra_Sumit_hackathon\rescuehandsAI\scripts\compare_backends.py", line 98, in main
+    obs, names = observation(args.seed)
+                 ^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\AI Journey\AI in 2026\Ai_infra_Sumit_hackathon\rescuehandsAI\scripts\compare_backends.py", line 35, in observation
+    obs = sim.observe(images=True)
+          ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\AI Journey\AI in 2026\Ai_infra_Sumit_hackathon\rescuehandsAI\src\rescuehandsai\sim.py", line 104, in observe
+    frames = self.render(POLICY_CAMERAS) if images else {}
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\AI Journey\AI in 2026\Ai_infra_Sumit_hackathon\rescuehandsAI\src\rescuehandsai\sim.py", line 92, in render
+    self._renderers[key] = mujoco.Renderer(self.model, height=height, width=width)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\AI Journey\AI in 2026\Ai_infra_Sumit_hackathon\rescuehandsAI\.venv-pai\Lib\site-packages\mujoco\rendering\classic\renderer.py", line 92, in __init__
+    self._mjr_context = mujoco.MjrContext(model, font_scale.value)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+mujoco.FatalError: gladLoadGL error

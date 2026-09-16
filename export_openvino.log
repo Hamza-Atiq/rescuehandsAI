@@ -1,0 +1,72 @@
+Loading weights:   0%|          | 0/489 [00:00<?, ?it/s]Loading weights:   0%|          | 1/489 [00:00<04:19,  1.88it/s]Loading weights:  14%|█▍        | 68/489 [00:00<00:03, 135.88it/s]Loading weights:  20%|██        | 100/489 [00:00<00:02, 151.28it/s]Loading weights:  26%|██▌       | 126/489 [00:01<00:02, 135.26it/s]Loading weights:  30%|██▉       | 146/489 [00:01<00:02, 123.13it/s]Loading weights:  33%|███▎      | 163/489 [00:01<00:02, 117.14it/s]Loading weights:  36%|███▋      | 178/489 [00:01<00:02, 117.66it/s]Loading weights:  40%|███▉      | 194/489 [00:01<00:02, 121.37it/s]Loading weights:  43%|████▎     | 209/489 [00:01<00:02, 122.55it/s]Loading weights:  46%|████▌     | 223/489 [00:01<00:02, 122.06it/s]Loading weights:  48%|████▊     | 236/489 [00:02<00:02, 119.92it/s]Loading weights:  51%|█████     | 249/489 [00:02<00:02, 99.18it/s] Loading weights:  54%|█████▎    | 262/489 [00:02<00:02, 88.74it/s]Loading weights:  56%|█████▌    | 272/489 [00:02<00:03, 66.69it/s]Loading weights:  57%|█████▋    | 280/489 [00:02<00:04, 50.18it/s]Loading weights:  59%|█████▊    | 287/489 [00:03<00:03, 52.24it/s]Loading weights:  62%|██████▏   | 301/489 [00:03<00:02, 64.75it/s]Loading weights:  68%|██████▊   | 333/489 [00:03<00:01, 107.72it/s]Loading weights:  73%|███████▎  | 355/489 [00:03<00:01, 128.21it/s]Loading weights:  78%|███████▊  | 383/489 [00:03<00:00, 155.97it/s]Loading weights:  86%|████████▌ | 419/489 [00:03<00:00, 203.92it/s]Loading weights:  91%|█████████ | 445/489 [00:03<00:00, 213.56it/s]Loading weights:  99%|█████████▉| 484/489 [00:03<00:00, 259.16it/s]Loading weights: 100%|██████████| 489/489 [00:03<00:00, 124.67it/s]
+`loss_type=None` was set in the config but it is unrecognized. Using the default loss: `ForCausalLMLoss`.
+D:\AI Journey\AI in 2026\Ai_infra_Sumit_hackathon\rescuehandsAI\.venv-pai\Lib\site-packages\physicalai\policies\smolvla\model.py:325: TracerWarning: Converting a tensor to a Python boolean might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  if len(all_keys) != batch[IMAGES].shape[0]:
+D:\AI Journey\AI in 2026\Ai_infra_Sumit_hackathon\rescuehandsAI\.venv-pai\Lib\site-packages\physicalai\policies\smolvla\model.py:414: TracerWarning: Converting a tensor to a Python boolean might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  if vector.shape[-1] == new_dim:
+D:\AI Journey\AI in 2026\Ai_infra_Sumit_hackathon\rescuehandsAI\.venv-pai\Lib\site-packages\transformers\masking_utils.py:192: TracerWarning: Converting a tensor to a Python boolean might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  if (padding_length := kv_length + kv_offset - attention_mask.shape[-1]) > 0:
+D:\AI Journey\AI in 2026\Ai_infra_Sumit_hackathon\rescuehandsAI\.venv-pai\Lib\site-packages\transformers\integrations\sdpa_attention.py:77: TracerWarning: Converting a tensor to a Python boolean might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  is_causal = query.shape[2] > 1 and attention_mask is None and is_causal
+D:\AI Journey\AI in 2026\Ai_infra_Sumit_hackathon\rescuehandsAI\.venv-pai\Lib\site-packages\transformers\models\smolvlm\modeling_smolvlm.py:439: TracerWarning: Converting a tensor to a Python integer might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  height = width = int(seq**0.5)
+D:\AI Journey\AI in 2026\Ai_infra_Sumit_hackathon\rescuehandsAI\.venv-pai\Lib\site-packages\transformers\models\smolvlm\modeling_smolvlm.py:445: TracerWarning: Converting a tensor to a Python integer might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  x = x.reshape(bsz, int(seq / (scale_factor**2)), embed_dim * (scale_factor**2))
+D:\AI Journey\AI in 2026\Ai_infra_Sumit_hackathon\rescuehandsAI\.venv-pai\Lib\site-packages\physicalai\policies\smolvla\model.py:825: TracerWarning: Iterating over a tensor might cause the trace to be incorrect. Passing a tensor of different shape won't change the number of iterations executed (and might lead to errors or silently give incorrect results).
+  ) in enumerate(zip(images, img_masks, strict=False)):
+D:\AI Journey\AI in 2026\Ai_infra_Sumit_hackathon\rescuehandsAI\.venv-pai\Lib\site-packages\physicalai\policies\smolvla\model.py:848: TracerWarning: torch.tensor results are registered as constants in the trace. You can safely ignore this warning if you use this function to create tensors out of constant variables that would be the same every time you call this function. In any other case, this might cause the trace to be incorrect.
+  img_emb *= torch.tensor(img_emb_dim**0.5, dtype=img_emb.dtype, device=img_emb.device)
+D:\AI Journey\AI in 2026\Ai_infra_Sumit_hackathon\rescuehandsAI\.venv-pai\Lib\site-packages\physicalai\policies\smolvla\model.py:848: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.detach().clone() or sourceTensor.detach().clone().requires_grad_(True), rather than torch.tensor(sourceTensor).
+  img_emb *= torch.tensor(img_emb_dim**0.5, dtype=img_emb.dtype, device=img_emb.device)
+D:\AI Journey\AI in 2026\Ai_infra_Sumit_hackathon\rescuehandsAI\.venv-pai\Lib\site-packages\physicalai\policies\smolvla\model.py:876: TracerWarning: Converting a tensor to a Python float might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  lang_emb *= math.sqrt(lang_emb_dim)
+D:\AI Journey\AI in 2026\Ai_infra_Sumit_hackathon\rescuehandsAI\.venv-pai\Lib\site-packages\physicalai\policies\smolvla\model.py:899: TracerWarning: torch.tensor results are registered as constants in the trace. You can safely ignore this warning if you use this function to create tensors out of constant variables that would be the same every time you call this function. In any other case, this might cause the trace to be incorrect.
+  att_masks = torch.tensor(att_masks, dtype=torch.bool, device=pad_masks.device)
+D:\AI Journey\AI in 2026\Ai_infra_Sumit_hackathon\rescuehandsAI\.venv-pai\Lib\site-packages\physicalai\policies\smolvla\model.py:903: TracerWarning: Converting a tensor to a Python boolean might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  if seq_len < self.prefix_length:
+D:\AI Journey\AI in 2026\Ai_infra_Sumit_hackathon\rescuehandsAI\.venv-pai\Lib\site-packages\physicalai\policies\smolvla\model.py:1435: TracerWarning: Converting a tensor to a Python boolean might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  if seq_len < position_ids.shape[1]:
+D:\AI Journey\AI in 2026\Ai_infra_Sumit_hackathon\rescuehandsAI\.venv-pai\Lib\site-packages\physicalai\policies\smolvla\model.py:1110: TracerWarning: torch.tensor results are registered as constants in the trace. You can safely ignore this warning if you use this function to create tensors out of constant variables that would be the same every time you call this function. In any other case, this might cause the trace to be incorrect.
+  time_tensor = torch.tensor(time, dtype=torch.float32, device=device).expand(bsize)
+D:\AI Journey\AI in 2026\Ai_infra_Sumit_hackathon\rescuehandsAI\.venv-pai\Lib\site-packages\physicalai\policies\smolvla\model.py:978: TracerWarning: torch.tensor results are registered as constants in the trace. You can safely ignore this warning if you use this function to create tensors out of constant variables that would be the same every time you call this function. In any other case, this might cause the trace to be incorrect.
+  att_masks = torch.tensor(att_masks, dtype=embs.dtype, device=embs.device)
+{
+  "checkpoint": "models/smolvla_rescuehands",
+  "inputs": {
+    "state": [
+      12
+    ],
+    "images.images.camera1": [
+      3,
+      256,
+      256
+    ],
+    "images.images.camera2": [
+      3,
+      256,
+      256
+    ],
+    "images.images.camera3": [
+      3,
+      256,
+      256
+    ],
+    "task": [
+      48
+    ]
+  },
+  "outputs": {
+    "action": [
+      50,
+      12
+    ]
+  },
+  "export_seconds": 1413.9,
+  "files": [
+    "manifest.json",
+    "smolvla.bin",
+    "smolvla.xml",
+    "tokenizer.bin",
+    "tokenizer.xml"
+  ]
+}
