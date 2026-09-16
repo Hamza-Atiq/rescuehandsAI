@@ -6,8 +6,10 @@ committed result or a Hub page.
 
 ## 📋 Basic information
 
-**Project title**
-RescueHands AI — a dinner table that survives a dropped fork
+**Project title** (max 50 characters)
+RescueHandsAI: A dinner table that survives a drop   ← 50 characters
+
+Alternative: RescueHands AI: Two Arms Recover a Dropped Fork   ← 47 characters
 
 **Short description** (one line)
 Two simulated SO-101 arms set a dinner place from a spoken-style instruction with a fine-tuned SmolVLA policy running on an Intel iGPU through OpenVINO, while a physics-aware supervisor catches drops and retries safely.
