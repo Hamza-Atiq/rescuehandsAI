@@ -21,3 +21,13 @@ data_*.log
 outputs/
 models/
 results/
+
+# secrets and local runtime files
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa*
+.venv-train/
+*.log
