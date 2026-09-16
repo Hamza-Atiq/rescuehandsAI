@@ -74,6 +74,8 @@ def start_problems(facts, scene_params, *, upright_min_up_z: float = 0.97) -> st
     """
     problems = []
     for item in SCENE_ITEMS:
+        if item in facts.out_of_bounds:
+            problems.append(f"{item} starts off the table")
         if facts.touching[item]:
             problems.append(f"{item} starts in a gripper")
         if facts.in_zone[item] is not None:
@@ -88,6 +90,16 @@ def start_problems(facts, scene_params, *, upright_min_up_z: float = 0.97) -> st
         if facts.height[utensil] > UTENSIL_MAX_REST_HEIGHT:
             problems.append(f"{utensil} is not flat on the table")
     return "; ".join(problems) or None
+
+
+def start_warnings(facts) -> list:
+    """Hard but possible starts, logged with each attempt rather than rejected.
+
+    Measured on perturbed seeds 55000-55099 (scale 0.6): 5 starts had the fork and
+    spoon touching, and the teacher still solved 1 of them, so they are not invalid.
+    Contacts exist only after physics has run, so a clean reset reports none."""
+    return [f"{item} leans on {other}" for item in SCENE_ITEMS
+            for other in sorted(facts.on_item.get(item, ()) if facts.on_item else ())]
 
 
 def yaw_quaternion(yaw: float):
