@@ -1,0 +1,172 @@
+{
+  "seed": 3,
+  "policy": {
+    "name": "smolvla_openvino_gpu",
+    "backend": "openvino",
+    "device": "GPU",
+    "checkpoint": "models\\openvino\\v2_fp32",
+    "n_action_steps": 25,
+    "privileged_state": false,
+    "camera_slots": {
+      "camera1": "overhead",
+      "camera2": "left_wrist",
+      "camera3": "right_wrist"
+    },
+    "contract": {
+      "joint_order": [
+        "left_arm/shoulder_pan",
+        "left_arm/shoulder_lift",
+        "left_arm/elbow_flex",
+        "left_arm/wrist_flex",
+        "left_arm/wrist_roll",
+        "left_arm/gripper",
+        "right_arm/shoulder_pan",
+        "right_arm/shoulder_lift",
+        "right_arm/elbow_flex",
+        "right_arm/wrist_flex",
+        "right_arm/wrist_roll",
+        "right_arm/gripper"
+      ],
+      "cameras": {
+        "camera1": "overhead",
+        "camera2": "left_wrist",
+        "camera3": "right_wrist"
+      },
+      "action_units": "absolute joint position targets in radians",
+      "control_hz": 20.0,
+      "dataset": "ABDHAM/rescuehands_table_v2",
+      "dataset_revision": "v3.0",
+      "source": "/kaggle/working/rescuehandsAI/outputs/smolvla_rescuehands_v2/checkpoints/last/pretrained_model",
+      "files": {
+        "smolvla.xml": "22b6a927679f8b5f6d2e699e0a2e9b9d80597ff2839db69457e42e9a6cb24ded",
+        "smolvla.bin": "778f9b55dcc718fec5aaff4061a659181ef543a9bfa2ca97510fc2ab9044d92c",
+        "tokenizer.xml": "94e9bad47abeb549043b44a0cbc4f01c421c0a5c82366c839a1525c589ab0148",
+        "tokenizer.bin": "2956b6fd761e8491d2fb0b6e1d7d9d26c539f753774133518d4a13673017d4ee",
+        "manifest.json": "30854be5f68589a2461c3f65825123d5d753f8e9543a78fa9cdd9f1bf22543a6"
+      }
+    }
+  },
+  "instruction": "Put the cup on the right of the plate and give the spoon to the left arm to place.",
+  "supervisor": false,
+  "fault": "GripperGlitch",
+  "state": "FAILED",
+  "steps": 1500,
+  "events": [
+    {
+      "label": "FAILED_GRASP",
+      "time": 15.050000000000953,
+      "item": "spoon",
+      "arm": null
+    },
+    {
+      "label": "FAILED_GRASP",
+      "time": 33.949999999998916,
+      "item": "cup",
+      "arm": "right_arm"
+    },
+    {
+      "label": "FAILED_GRASP",
+      "time": 50.00000000000713,
+      "item": "spoon",
+      "arm": null
+    },
+    {
+      "label": "FAILED_GRASP",
+      "time": 58.600000000011526,
+      "item": "cup",
+      "arm": "right_arm"
+    },
+    {
+      "label": "OBJECT_DROPPED",
+      "time": 63.250000000013905,
+      "item": "spoon",
+      "arm": "right_arm"
+    },
+    {
+      "label": "TIMEOUT",
+      "time": 75.00000000000428
+    }
+  ],
+  "recoveries": 0,
+  "clamped_joint_steps": 30,
+  "inference_calls": 60,
+  "inference_seconds": [
+    4.433399999994435,
+    4.8178074000024935,
+    4.9876154999947175,
+    4.666546100001142,
+    4.731998099996417,
+    4.738082900003064,
+    4.548675300000468,
+    4.210648100000981,
+    4.335754499996256,
+    4.779090799995174,
+    4.593031200005498,
+    4.402808400001959,
+    4.65358120000019,
+    4.904380100000708,
+    4.690162099999725,
+    4.52559929999552,
+    4.176259600004414,
+    4.355963600006362,
+    5.3652958999955445,
+    3.855777600001602,
+    3.486507599998731,
+    3.9022220999977435,
+    3.6240634999994654,
+    3.9053639999983716,
+    4.199242299997422,
+    4.258249999998952,
+    3.847184500002186,
+    3.5811252999992575,
+    3.626446100002795,
+    3.691182199996547,
+    3.7491986000022735,
+    3.5933730000033393,
+    4.023279300003196,
+    3.5932050999981584,
+    3.7811235999979544,
+    3.681461299995135,
+    3.611468299997796,
+    3.6808783000014955,
+    3.7962435000008554,
+    3.590277800001786,
+    3.751180999999633,
+    3.591095600000699,
+    3.801218799999333,
+    3.803326500004914,
+    3.8007826000030036,
+    3.845944500004407,
+    3.5860562000016216,
+    4.350428500001726,
+    3.958455200001481,
+    4.23637630000303,
+    3.6921577000030084,
+    3.597630999996909,
+    3.8063860000038403,
+    3.6700810000038473,
+    3.6245049000062863,
+    3.5841381999998703,
+    3.825316999995266,
+    3.633257000001322,
+    4.313217500006431,
+    4.634216600003128
+  ],
+  "fault_step": 1262,
+  "max_steps": 1500,
+  "max_recoveries": 2,
+  "outcome": {
+    "success": false,
+    "cup_in_zone": false,
+    "utensil_in_zone": false,
+    "handoff": false,
+    "released": false,
+    "supported": false,
+    "cup_upright": false,
+    "settled": true,
+    "spare_utensil_in_place": false
+  },
+  "failure": "TIMEOUT",
+  "sim_seconds": 75.00000000000428,
+  "wall_seconds": 280.32
+}

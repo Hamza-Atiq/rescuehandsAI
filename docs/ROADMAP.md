@@ -9,8 +9,8 @@ by what the measured evidence says will help most.
 | Gripper fault | Supervisor | Success | What happened |
 |---|---|---:|---|
 | yes | on | 1/10 | hand-off 4/10, utensil placed 4/10, cup placed 2/10; no item left the table |
-| yes | off | 0/10 (seeds 0–8: 0/9; seed 9 pending at time of writing) | 5 items knocked off the table, 4 timeouts |
-| none | on / off | not run yet | |
+| yes | off | 0/10 | 5 items knocked off the table, 5 timeouts |
+| none | on / off | running after submission | |
 
 **Diagnosis (measured):**
 - **Grasp precision is the bottleneck.** In the failed seeds the utensil rose at most

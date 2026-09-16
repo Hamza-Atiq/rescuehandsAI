@@ -84,7 +84,7 @@ flowchart LR
 | Scripted teacher (baseline) | off | yes | 2/10 | |
 | Scripted teacher (baseline) | on | yes | **7/10** | supervisor turns 2 into 7 |
 | **SmolVLA v2 · OpenVINO iGPU** | on | yes | **1/10** | hand-off completed in 4/10, utensil placed 4/10, cup placed 2/10; seed 4 recovered from a real drop and set the table |
-| SmolVLA v2 · OpenVINO iGPU | off | yes | running | same seeds and fault, supervisor off — the matched comparison |
+| SmolVLA v2 · OpenVINO iGPU | off | yes | **0/10** | same seeds and fault, supervisor off: 5 items knocked off the table, 5 timeouts (seed 4 fails here, succeeds with the supervisor) |
 
 **What the learned result shows:**
 - **The safety loop works.** Every drop and every missed grasp was detected, labelled
