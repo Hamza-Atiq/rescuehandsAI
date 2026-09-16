@@ -1,0 +1,58 @@
+{"seed": 0, "state": "FAILED", "failure": "POLICY_ERROR", "recoveries": 0, "steps": 133, "wall_s": 4.05}
+{"seed": 1, "state": "FAILED", "failure": "POLICY_ERROR", "recoveries": 0, "steps": 132, "wall_s": 3.73}
+{"seed": 2, "state": "FAILED", "failure": "POLICY_ERROR", "recoveries": 0, "steps": 132, "wall_s": 4.18}
+{"seed": 3, "state": "FAILED", "failure": "POLICY_ERROR", "recoveries": 0, "steps": 132, "wall_s": 4.36}
+{"seed": 4, "state": "FAILED", "failure": "POLICY_ERROR", "recoveries": 0, "steps": 132, "wall_s": 4.08}
+{"seed": 5, "state": "FAILED", "failure": "POLICY_ERROR", "recoveries": 0, "steps": 133, "wall_s": 4.21}
+{"seed": 6, "state": "FAILED", "failure": "POLICY_ERROR", "recoveries": 0, "steps": 132, "wall_s": 4.15}
+{"seed": 7, "state": "FAILED", "failure": "POLICY_ERROR", "recoveries": 0, "steps": 132, "wall_s": 3.86}
+{"seed": 8, "state": "FAILED", "failure": "POLICY_ERROR", "recoveries": 0, "steps": 132, "wall_s": 4.07}
+{"seed": 9, "state": "FAILED", "failure": "POLICY_ERROR", "recoveries": 0, "steps": 132, "wall_s": 4.57}
+{
+  "run": "scripted_v2_sup-off_fault-glitch",
+  "created_utc": "20260915-193158",
+  "git_revision": "484d2bd354b609ba8b26aaa2052db0ddd72f912a",
+  "policy": {
+    "name": "scripted_teacher",
+    "backend": "python",
+    "device": "cpu",
+    "checkpoint": null,
+    "privileged_state": true,
+    "note": "IK teacher; baseline and demonstration source only"
+  },
+  "supervisor": false,
+  "fault": "glitch",
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
+  ],
+  "episodes": 10,
+  "max_steps_override": null,
+  "success_rate": 0.0,
+  "successes": 0,
+  "failures": {
+    "POLICY_ERROR": 10
+  },
+  "collision_episodes": 0,
+  "faults_injected": 10,
+  "recovered_after_fault": 0,
+  "mean_recoveries": 0.0,
+  "mean_sim_seconds_success": null,
+  "inference_calls": 0,
+  "inference_mean_s": null,
+  "inference_p95_s": null,
+  "platform": {
+    "processor": "Intel64 Family 6 Model 78 Stepping 3, GenuineIntel",
+    "system": "Windows-10-10.0.19045-SP0",
+    "python": "3.12.10"
+  },
+  "note": "Simulation time pauses during policy inference; latency is wall-clock and reported separately."
+}
