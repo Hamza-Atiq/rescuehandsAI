@@ -58,6 +58,13 @@ All changes are additive. The new pick task, outcome and scripts sit next to the
 existing full-task code. The existing full-task evaluation, teacher and tests
 must keep working unchanged.
 
+**Physics version 1 is preserved explicitly.** Every existing full-task command
+(`evaluate.py`, `generate_dataset.py`, `generate_recovery_dataset.py`, the Kaggle
+pipeline's existing modes, showcase rendering) keeps `physics_version = 1` by
+default and builds a byte-identical world XML. Only the new pick-task commands use
+`physics_version = 2`, and they pass it explicitly. A regression check (§12)
+proves version 1 is unchanged.
+
 ## 3. Scenes and the four cells
 
 ### Base scene
@@ -92,7 +99,8 @@ A test checks that the four generated scenes differ only in word and tray order.
 
 A start is physically invalid if items overlap, any item moves at rest beyond a
 small speed threshold during the zero-action check, or any item is off the table.
-The zero-action check runs on a **separate copy** of the simulation; the episode
+"Zero action" means **both arms hold their configured home joint targets** (not
+zero joint targets). The check runs on a **separate copy** of the simulation; the episode
 itself starts from the untouched initial state (stepping the episode's world
 before it starts was measured to change outcomes).
 Thresholds are written in config and frozen before the teacher gate. Only these
@@ -104,10 +112,14 @@ fails it.**
 
 ## 4. Physics version 2
 
-Problem: item friction must actually govern grasp contact and slip.
+Problem: item friction must actually govern grasp contact and slip. Measured
+cause: the SO-101 asset's `collision_gripper` and `collision_gripper_mesh` classes
+set `priority="1"` and `friction="1 5e-3 5e-4"`, so in MuJoCo the gripper's
+friction wins over the utensil's sampled friction in every jaw contact.
 
-- Change the contact setup so the utensil's sampled friction determines the
-  jaw–utensil contact friction.
+- Change the version-2 contact setup so the utensil's sampled friction determines
+  the jaw–utensil contact friction (for example by matching priority or setting the
+  contact pair explicitly). The version-1 world is not changed.
 - **Slip test:** with an identical scripted grasp and lift, compare low and high
   friction values. The test must show both (a) the measured jaw–utensil contact
   friction changes, and (b) slip (utensil movement in the gripper frame during
@@ -120,7 +132,9 @@ Problem: item friction must actually govern grasp contact and slip.
 - Loading data or running evaluation with a mismatched version or hash is
   rejected by default. A future migration needs an explicit flag and a recorded
   reason.
-- The 569 old v2-dataset demonstrations are not reused.
+- The 569 old v2-dataset demonstrations are not reused as training data. This
+  check applies to **datasets and evaluations**, not to initial model weights: an
+  old checkpoint may be used as a training starting point (§9).
 
 ## 5. Contacts and success rules
 
@@ -134,37 +148,70 @@ never hard-coded.
 ### Contact table
 
 Contacts are read at **every physics step**, including between control updates.
-Every contact is classified by the pair of bodies or geoms in a config file
-(`configs/pick_contacts.json`). Robot body names are `{arm}/base`,
-`{arm}/shoulder`, `{arm}/upper_arm`, `{arm}/lower_arm`, `{arm}/wrist`,
-`{arm}/gripper` (holds the fixed jaw), `{arm}/camera_mount`,
-`{arm}/moving_jaw_so101_v1`.
+Every contact is classified by its pair of **collision geoms (shapes)**, not
+whole bodies, using a config file (`configs/pick_contacts.json`). Unnamed asset
+geoms are identified by body, class, type and mesh name or index, recorded in
+that file.
 
-1. **Allowed structural robot contacts** — only explicitly named pairs:
-   - each arm's `base` with the table (mounting);
-   - `gripper` with `moving_jaw_so101_v1` of the same arm.
+#### Physical vs decorative shapes (version-2 world)
 
-   No other robot–robot pair is allowed. Any other contact between two parts of
-   the same arm is a **self-collision** and fails the episode. Before freezing,
-   the list is checked against actual contacts at the home pose and during
-   teacher runs; adding a pair requires a written reason in the spec, never an
-   automatic addition.
-2. **Normal scene contacts** (not robot): items resting on the table, mat and
-   tray surfaces, and items touching each other at rest. These are allowed at
-   the start and during the episode, and are checked only by the movement rules
-   and the stricter support rule during the hold.
-3. **Allowed task contacts:** right `gripper` or right `moving_jaw_so101_v1` (the
-   "right jaws" in this spec; the `gripper` body carries the fixed jaw) with
-   the named utensil; right jaws with the table or mat below the force limit.
-4. **Forbidden contacts:** every other robot contact, including:
-   - any part of either arm touching the spare utensil;
-   - the left arm touching any item, the plate, the mat or the table (except its
-     base mount);
-   - any robot part touching the plate or cup;
-   - any right-arm part other than the jaws touching the table, mat or tray;
-   - right jaws with table or mat above the force limit;
+Only shapes that can collide produce contacts. The contact monitor cannot see
+anything else, so no rule may depend on a decorative shape.
+
+| Physical (can collide) | Decorative (`contype=0`, no contacts) |
+|---|---|
+| `table`, `plate`, `cup_body`, all fork geoms (`fork_handle`, `fork_neck`, `fork_prong*`) and spoon geoms (`spoon_handle`, `spoon_bowl`) | `mat` (the red "tray" area the utensils visually sit on), `cup_zone`, `utensil_zone`, `plate_rim`, `cup_top` |
+| robot `collision` boxes (group 3), `collision_gripper` shapes (group 3), `collision_gripper_mesh` meshes (group 4) | all robot `visual` meshes, all `sts3215` motor shapes, showcase floor |
+
+The utensils physically rest on the **table**; "tray" and "mat" in wordings and
+in this spec name the decorative area only. `{arm}/base` has no collision shapes,
+so no base contact can occur. A test places shapes in contact for **every
+forbidden contact class claimed below** and asserts the monitor detects it; any
+class that cannot be detected is removed from the rules, not silently kept.
+
+#### Right-jaw grasp shapes (exact list)
+
+Only these right-arm shapes count as jaw contact for a grasp:
+
+- fixed jaw (in `right_arm/gripper`): `fixed_jaw_box3` … `fixed_jaw_box7`,
+  `fixed_jaw_sph_tip1` … `fixed_jaw_sph_tip3`;
+- moving jaw (in `right_arm/moving_jaw_so101_v1`): `moving_jaw_box2`,
+  `moving_jaw_box3`, `moving_jaw_sph_tip1` … `moving_jaw_sph_tip3`.
+
+**Not** jaw contact: the unnamed gripper housing `collision` box,
+`fixed_jaw_box1`, `fixed_jaw_box2`, `moving_jaw_box1`, `camera_box1`,
+`camera_box2`, and the unnamed `collision_gripper_mesh` meshes of both jaws.
+The first implementation step records which shapes actually touch the utensil
+during teacher grasps. If a shape outside the list carries real grasp contact
+(for example a jaw mesh), the list changes only by an owner-approved spec edit
+naming that shape and the evidence.
+
+#### Contact classes
+
+1. **Allowed structural robot contacts.** MuJoCo's built-in filter already skips
+   parent–child and welded-body pairs (for example `gripper`–`moving_jaw_so101_v1`,
+   `gripper`–`camera_mount`). **No additional robot–robot pair is allowed.** Any
+   other contact between two shapes of the same arm is a **self-collision** and
+   fails. The home pose and teacher runs are checked for such contacts before
+   freezing; an exception needs an owner-approved spec edit naming the exact
+   shape pair.
+2. **Normal scene contacts** (no robot shape involved): items resting on the
+   table, items resting on the plate, and items touching each other at rest.
+   Allowed at the start and during the episode; judged only by the movement rules
+   and by the stricter support rule during the hold.
+3. **Allowed task contacts:** a right-jaw grasp shape with the named utensil; a
+   right-jaw grasp shape with the table below the force limit.
+4. **Forbidden contacts:** every other contact that involves a robot shape,
+   including:
+   - any robot shape touching the spare utensil;
+   - any left-arm shape touching anything;
+   - any robot shape touching the plate or `cup_body`;
+   - any right-arm shape that is not a jaw grasp shape touching the table or the
+     named utensil (for example the housing box or a jaw mesh — recorded as
+     `FORBIDDEN_CONTACT` until the list is changed as described above);
+   - a jaw grasp shape with the table above the force limit;
    - arm–arm contact;
-   - any pair not listed in the file (also flagged as `UNKNOWN_CONTACT_PAIR` for
+   - any pair not listed in the file (also flagged `UNKNOWN_CONTACT_PAIR` for
      review before freezing).
 
 ### Force limit
@@ -188,9 +235,10 @@ become successful.
 2. **A real, stable hold.** A hold window of `hold_s` seconds in which, at every
    physics step:
    - the named utensil is at least 5 cm above its start height;
-   - its only contacts are the right gripper's jaws (no table, mat, tray, plate,
-     cup, spare, other robot part or left arm support);
-   - at least one right jaw touches it, and both jaws together touch it on at
+   - its only contacts are right-jaw grasp shapes (no table, plate, cup, spare,
+     gripper housing, jaw mesh, other robot shape or left-arm support);
+   - at least one jaw (fixed or moving) touches it through a grasp shape, and
+     both jaws together touch it on at
      least 80% of the window's physics steps, with no single-jaw gap longer than
      a gap limit.
 
@@ -207,7 +255,7 @@ become successful.
 4. **Tidy, safe scene.** Over the whole episode: maximum cup displacement < 1 cm,
    maximum cup tilt < 15°; no item falls or leaves the allowed workspace (the
    named utensil leaving the table surface is expected); no arm–arm contact; no
-   self-collision; no forbidden table, mat or plate contact.
+   self-collision; no forbidden table or plate contact.
 5. **In time.** The hold window must complete by the deadline: 300 control steps
    (15 s) as a starting value. The teacher gate records the teacher's p95 and
    maximum hold-completion time; if either leaves too little margin under the
@@ -223,10 +271,23 @@ become successful.
   `EXCESS_FORCE`, `UNKNOWN_CONTACT_PAIR`, `INVALID_ACTION`, `POLICY_ERROR`.
 - **Unmet goals** are decided only at the deadline: `NO_LIFT` (never 5 cm up),
   `IMPROPER_HOLD` (lifted but no valid hold window), `TIMEOUT` (other).
-- After a normal failure the episode keeps running to the deadline for diagnosis
-  while the simulation stays stable. **Early stop** on severe violations: an item
-  falls or leaves the workspace, arm–arm contact, force above the severe limit,
-  NaN action, or unstable physics (non-finite state or simulator warning).
+- After a normal failure the episode keeps running to the deadline for diagnosis.
+  **Early stop** (still a **valid failure**) on severe violations: an item falls or
+  leaves the workspace, arm–arm contact, contact force above the severe limit
+  (`EXCESS_FORCE` — a recorded physical outcome, not a simulator failure), or a
+  NaN/non-finite action from the policy (`INVALID_ACTION`).
+- A **simulator failure** ends the episode as **invalid** `SIM_ERROR` (§6). It is
+  defined narrowly, and only these count:
+  - MuJoCo raises an exception while stepping;
+  - `qpos`, `qvel` or `qacc` becomes non-finite;
+  - MuJoCo raises its bad-acceleration warning (`mjWARN_BADQACC`, where it
+    automatically resets the state);
+  - a contact or constraint buffer overflows (`mjWARN_CONTACTFULL`,
+    `mjWARN_CNSTRFULL`), because the contact rules can no longer be trusted.
+
+  All other MuJoCo warnings are recorded in the episode file and do **not** end
+  the episode or change validity. Every `SIM_ERROR` counts toward the retry and
+  blocking rule in §6, so repeated physics blow-ups cannot hide.
 - The report lists **every** failed rule with its first step, plus the first
   failure in time. When an episode stops early or crashes, it lists the rules
   that could not be evaluated.
@@ -253,6 +314,12 @@ contact forces per pair, and time to hold.
 | Exception or NaN while the policy runs | `POLICY_ERROR` / `INVALID_ACTION` | **valid failure** |
 | Timeout or any rule failure | rule labels | valid failure |
 
+- **Errors are labelled by their source, not by when they happen.** The runner
+  wraps each stage separately: physics stepping and rendering/observation building
+  → `SIM_ERROR`; model preprocessing, forward pass and action postprocessing
+  inside the policy adapter → `POLICY_ERROR`; model loading → `MODEL_LOAD_ERROR`.
+  A renderer failure while building an observation for a policy call is still
+  `SIM_ERROR`.
 - Contract checks run before the first episode; a mismatch stops the whole run.
 - Policy exceptions are never reclassified as infrastructure errors.
 - **Retry rule:** an invalid attempt gets **one** retry, only after the problem is
@@ -345,8 +412,15 @@ hash and model hash.
    - sample-image sheet from every camera looks correct;
    - labels (instruction, word, cell, slot, template) match the scene;
    - replaying the saved actions in simulation reproduces each episode's outcome;
-   - tiny overfit: the model fits 1 scene × 4 cells and picks the named item in
-     all four open-loop and closed-loop;
+   - tiny overfit on 1 scene × 4 cells, judged two separate ways:
+     - **open-loop (action comparison only):** on the recorded observations of
+       all four cells, the model's predicted action chunks match the teacher's
+       recorded actions within a mean-absolute-error tolerance written in config,
+       and swapping the word changes the model's actions by at least half as much
+       as it changes the teacher's. Open-loop results never claim a pickup;
+     - **closed-loop (execution):** the model drives the simulation with its normal
+       chunked control, no teacher, no replanning and no recovery, and
+       `pick_outcome` succeeds in all four cells;
    - balance and acceptance-bias reports are complete.
 2. **Full: grow to 300 training scenes × 4 = 1,200 episodes** (the planned
    maximum). Growth stops only if data checks fail. Attempt budgets come from
@@ -360,9 +434,34 @@ Both `lerobot/smolvla_base` and `ABDHAM/smolvla_rescuehands_v2` are trained with
 the **same data, the same batch size and the same number of steps**, so both see
 the same number of training examples. The step count and batch size are declared
 in the training manifest before training starts. Checkpoints every 2,000 steps
-are uploaded to Hugging Face. Default freezing (approach A). Unfreezing more
-(approach B) is considered only if A misses the 95% bar on the dev selection set
-and the language probe still shows weak word use.
+are uploaded to Hugging Face.
+
+**Pinned training stack:** `lerobot[smolvla]==0.5.1` and `transformers==5.3.0`
+(the versions already pinned in `training/kaggle_pipeline.py`, used to train v2).
+The laptop's `.venv-ml` currently has lerobot 0.6.1 and transformers 5.5.4; any
+native model check (tiny overfit, probe, parity) must run on the pinned versions,
+and the implementation plan resolves this before those checks.
+
+**Approach A — exact trainable components** (SmolVLA settings
+`freeze_vision_encoder=True`, `train_expert_only=True`, `train_state_proj=True`):
+
+- **frozen:** the whole vision-language model (SigLIP vision encoder, connector
+  and the SmolLM2 text model);
+- **trained:** the action expert transformer, the state projection, the action
+  input and output projections, and the action-time MLP.
+
+At training start the launcher lists every trainable parameter name and the
+trainable/total counts into the training manifest. If the list differs from the
+above, training stops. Approach B (unfreeze more) is considered only if A misses
+the 95% bar on the dev selection set and the language probe still shows weak
+word use.
+
+**Old checkpoint as a starting point.** `ABDHAM/smolvla_rescuehands_v2` was trained
+on physics-version-1 data. It is allowed **only as initial weights** for training;
+its old demonstrations remain excluded. The physics-version and hash checks apply
+to the new dataset, to the trained checkpoints (which record the version-2
+dataset they were trained on) and to evaluations — not to the initial weights.
+The training manifest records the init checkpoint ID and its Hub revision hash.
 
 ### Checkpoint selection (rule frozen before any result)
 
@@ -388,18 +487,25 @@ and the language probe still shows weak word use.
   - per-stage maximum and mean action differences are reported against a tolerance
     written in config;
   - behavior check: the chosen model runs natively and on OpenVINO on the **same
-    40 scene–instruction pairs**, compared episode by episode.
+    40 scene–instruction pairs**, compared episode by episode. Both sides run on
+    the laptop, so the simulator build and machine are the same and only the
+    inference runtime differs: **native PyTorch on the laptop CPU** versus
+    **OpenVINO on the laptop Intel iGPU**, with the same saved noise.
 
 ## 10. Where each step runs
 
 1. **Laptop:** physics v2 and slip test, force measurements, contact-table check,
    teacher gate, and a timed run of 4 complete episodes (including model load and
-   rendering) to replace the 7-hour estimate for the final test.
-2. **Kaggle:** pilot and full data generation (GPU/EGL rendering, provenance),
-   tiny overfit, both training runs, checkpoint screening and selection (native).
-3. **Laptop Intel iGPU (OpenVINO):** parity checks, paired 40-episode native vs
-   OpenVINO comparison, and — once, after the design and model are frozen — the
-   400-episode main test and the 96-episode wording test.
+   rendering) to replace the 7-hour estimate for the final test. The timing run
+   also measures native CPU episode time for the paired comparison.
+2. **Kaggle (native PyTorch on the Kaggle T4 GPU):** pilot and full data
+   generation (GPU/EGL rendering, provenance), tiny overfit, both training runs,
+   checkpoint screening on the quick set and selection on the selection set.
+3. **Laptop:** stage-wise parity checks (native PyTorch on CPU vs OpenVINO on
+   iGPU, saved noise); the paired 40-episode comparison (native PyTorch on the
+   laptop CPU vs OpenVINO on the laptop Intel iGPU); and — once, after the design
+   and model are frozen — the 400-episode main test and the 96-episode wording
+   test on **OpenVINO on the Intel iGPU**.
 
 ## 11. Evaluation reporting
 
@@ -434,8 +540,7 @@ instructions work. Each template is reported separately.
 A run directory is tied to one experiment. Any change to model, code, scene list,
 physics, rules or configuration needs a **new run directory**.
 
-- `manifest.json`: git commit, **source snapshot hash** (SHA-256 over all tracked
-  source, config and script files as they are on disk), spec hash, physics version,
+- `manifest.json`: git commit, **snapshot record** (below), spec hash, physics version,
   scene/config hash, rules/thresholds hash, model ID and checkpoint hash, backend,
   device actually used, noise mode and noise-file hash, scene-list hash, flags,
   start and end time, `finished`, `valid_count`, invalid counts per label,
@@ -455,9 +560,26 @@ physics, rules or configuration needs a **new run directory**.
 - `evaluation_valid` is true only if every planned episode has exactly one scored
   valid attempt and no episode is blocked.
 
+### Snapshot record
+
+A hash of tracked files alone can miss code that actually runs, so the snapshot
+record contains:
+
+- **source hash:** SHA-256 over every file under `src/`, `scripts/`, `training/`
+  and `configs/` as it is on disk, tracked or not;
+- **untracked-file rule:** for data generation, training and the final test, the
+  run **refuses to start** if any untracked or modified file exists in those
+  folders. Development runs may start, but they list every untracked or modified
+  file there with its own hash;
+- **asset hash:** the robot XML and every mesh file it references, plus any other
+  referenced asset;
+- **runtime versions:** Python, MuJoCo, NumPy, PyTorch, lerobot, transformers,
+  OpenVINO, NNCF, the OS, and device names and driver versions for CPU/iGPU/GPU;
+- **model files:** checkpoint or export file hashes and the noise-file hash.
+
 ### Resume
 
-A run resumes only when model, source snapshot hash, scene list, physics version,
+A run resumes only when model, snapshot record, scene list, physics version,
 rules/thresholds and configuration all match the manifest. Otherwise it refuses
 and asks for a new run directory. Resume skips episodes that already have a
 scored valid attempt and never overwrites attempt files.
@@ -471,14 +593,41 @@ scored valid attempt and never overwrites attempt files.
   severe violations; unevaluable rules listed on crash.
 - **Hold:** item swinging at constant distance fails; slow stable hold passes;
   support by table or other robot part fails.
-- **Contacts:** named structural pairs allowed; unnamed same-arm contact is a
-  self-collision; normal item–table contact at start does not fail; unknown pair
-  forbidden and flagged; a brief contact between control steps is caught
-  (simulation test); substeps derived from config and non-integer ratio rejected.
-- **Validity and retry:** each error maps to its label; policy exceptions stay valid
-  failures; one diagnosed retry allowed; second invalid attempt blocks; valid
-  failures never retried.
-- **Resume:** refuses on any mismatched hash; never overwrites attempts.
+- **Contacts:** classification is by shape, not body — a utensil touching the
+  gripper housing box, `fixed_jaw_box1` or a jaw mesh is not jaw contact; only the
+  listed grasp shapes count; MuJoCo-filtered parent/weld pairs produce no contact;
+  any other same-arm contact is a self-collision; normal item–table and
+  item–plate contact at start does not fail; unknown pair forbidden and flagged;
+  a brief contact between control steps is caught (simulation test); substeps
+  derived from config and a non-integer ratio rejected.
+- **Detectability:** for every forbidden contact class in §5, a simulation test
+  forces that contact and asserts the monitor reports it; decorative shapes
+  (`mat`, zones, `plate_rim`, `cup_top`) are asserted to have `contype=0` and to be
+  absent from every rule.
+- **Start check:** the zero-action check holds home joint targets on a copy of the
+  simulation and leaves the episode's own state untouched (state compared before
+  and after).
+- **Physics errors:** exception, non-finite state, `mjWARN_BADQACC` and contact /
+  constraint buffer overflow each give invalid `SIM_ERROR`; another MuJoCo warning
+  is recorded without ending the episode; a severe force gives a valid
+  `EXCESS_FORCE` failure.
+- **Validity and retry:** each error maps to its label **by source** — a renderer
+  failure while building an observation for a policy call is `SIM_ERROR`, an
+  exception in the policy forward pass is `POLICY_ERROR`; policy exceptions stay
+  valid failures; one diagnosed retry allowed; second invalid attempt blocks;
+  valid failures never retried.
+- **Snapshot and resume:** an untracked or modified file under `src/`, `scripts/`,
+  `training/` or `configs/` changes the source hash and blocks data generation,
+  training and the final test; a changed mesh file changes the asset hash; resume
+  refuses on any mismatch; attempts are never overwritten.
+- **Model settings:** the trainable-parameter list check stops training when it
+  differs from approach A; a v1 init checkpoint is accepted as initial weights
+  while a v1 dataset is rejected.
+- **Physics version 1 regression:** before any code change, record (a) the
+  version-1 world XML hash for seeds 0–9 and (b) the scripted full-task evaluation
+  outcomes for seeds 0–9 (supervisor on, no fault) as a reference. After the
+  changes, the default full-task commands must reproduce both exactly, and
+  `physics_version` defaults to 1 for them.
 - **Seeds and scenes:** overlapping seed ranges and duplicate scene settings are
   detected; test lists refused without `--final` and a frozen manifest.
 - **Statistics:** known hand-worked examples give exact rates; grouping by scene is
@@ -491,13 +640,17 @@ scored valid attempt and never overwrites attempt files.
   mismatch rejected.
 - **End to end:** teacher on 2 dev scenes × 4 cells writes valid files; parity script
   with saved noise on a tiny export.
-- **No regression:** all existing tests pass; the existing full-task evaluation is
-  unchanged.
+- **No regression:** all existing tests pass; the version-1 regression check above
+  passes.
 
 ## 13. Order of work
 
-1. Validity labels, contact table, `pick_outcome`, cells, scene identity (with tests).
-2. Physics v2, slip test, force measurements; freeze start rules and force limits.
+0. Record the physics-version-1 reference (world XML hashes and scripted outcomes,
+   seeds 0–9) before touching code.
+1. Validity labels, contact table (shape-level, detectability tests),
+   `pick_outcome`, cells, scene identity, snapshot record (with tests).
+2. Physics v2, slip test, force measurements; record which shapes touch the
+   utensil in teacher grasps; freeze start rules and force limits.
 3. Pick teacher; calibrate hold tolerances on teacher; teacher gate (100 episodes);
    timeout check with p95 and maximum.
 4. Seed/scene lists frozen (dev, main test, wording test).
