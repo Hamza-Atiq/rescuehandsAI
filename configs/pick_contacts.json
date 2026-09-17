@@ -1,0 +1,20 @@
+{
+  "grasp_arm": "right_arm",
+  "jaw_grasp_geoms": {
+    "fixed": ["fixed_jaw_box3", "fixed_jaw_box4", "fixed_jaw_box5", "fixed_jaw_box6", "fixed_jaw_box7",
+              "fixed_jaw_sph_tip1", "fixed_jaw_sph_tip2", "fixed_jaw_sph_tip3"],
+    "moving": ["moving_jaw_box2", "moving_jaw_box3",
+               "moving_jaw_sph_tip1", "moving_jaw_sph_tip2", "moving_jaw_sph_tip3"]
+  },
+  "scene_geoms": {
+    "table": ["table"],
+    "plate": ["plate"],
+    "cup": ["cup_body"],
+    "fork": ["fork_handle", "fork_neck", "fork_prong0", "fork_prong1", "fork_prong2"],
+    "spoon": ["spoon_handle", "spoon_bowl"]
+  },
+  "decorative_geoms": ["mat", "cup_zone", "utensil_zone", "plate_rim", "cup_top"],
+  "jaw_table_force_limit_n": null,
+  "severe_force_limit_n": null,
+  "force_limits_frozen": false
+}
