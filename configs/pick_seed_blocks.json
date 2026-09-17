@@ -1,0 +1,16 @@
+{
+  "blocks": {
+    "train": [3000000, 3001000],
+    "dev": [3100000, 3200000],
+    "test_main": [3200000, 3300000],
+    "test_wording": [3300000, 3400000]
+  },
+  "legacy_ranges": [
+    {
+      "start": 0,
+      "stop": 200000,
+      "complete": false,
+      "source": "seeds used before this milestone: evaluation 0-9, teacher dev 4000-4015, Kaggle clean data from 1000, perturbed from 51000, recovery from 101000, perturbed measurement 55000-55099, laptop shards local_w0/w1 (seed provenance incomplete)"
+    }
+  ]
+}
