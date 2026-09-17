@@ -85,7 +85,9 @@ The spec's order of work (§13) is split into five plans. Each one produces work
 
 **Interfaces:**
 - Consumes: `rescuehandsai.scene.load_config`, `sample_params`, `world_xml` (current signatures).
-- Produces: `check_v1_regression.compare(reference: Path, candidate: Path) -> list[str]`; reference file shape `{"git_revision": str, "world_xml_sha256": {"0": hex, ... "9": hex}}`.
+- Produces: `check_v1_regression.compare(reference: Path, candidate: Path) -> list[str]`; reference file shape `{"git_revision": str, "world_xml_sha256": {"0": hex, ... "9": hex}, "identity": {relative path: hex}}`. `identity` covers `configs/scene.json`, `configs/simulation.json`, the robot XML and every file in its `assets/` folder.
+
+**Wording rule:** a passing comparison means the new run **matched the recorded results** (every episode record field except wall-clock timings, plus the asset and configuration identities). It does not prove that all behaviour is identical, and reports must not claim that.
 
 - [ ] **Step 1: Confirm the working tree has no source changes**
 
@@ -99,7 +101,8 @@ Expected: no output. If anything is listed, stop and ask the owner. The referenc
 ```python
 """Record the physics-version-1 reference before any pick-milestone code change (spec §12).
 
-Writes tests/data/physics_v1_reference.json: the world XML SHA-256 for seeds 0-9 and
+Writes tests/data/physics_v1_reference.json: the world XML SHA-256 for seeds 0-9, the
+identity of the scene/simulation configs and the robot asset (XML and every mesh), and
 the git revision it was taken at. Scripted outcomes come from
   scripts/evaluate.py --policy scripted --seeds 0:10 --supervisor on --name v1_reference_pre_pick
 """
@@ -108,6 +111,26 @@ import json
 import subprocess
 
 from rescuehandsai.scene import ROOT, load_config, sample_params, world_xml
+
+TEXT_SUFFIXES = {".json", ".xml", ".py"}
+
+
+def digest(path) -> str:
+    data = path.read_bytes()
+    if path.suffix.lower() in TEXT_SUFFIXES:
+        data = data.replace(b"\r\n", b"\n")  # this checkout converts line endings
+    return hashlib.sha256(data).hexdigest()
+
+
+def identity_files() -> list:
+    sim_config = json.loads((ROOT / "configs/simulation.json").read_text())
+    asset = ROOT / sim_config["asset_path"]
+    meshes = sorted(p for p in (asset.parent / "assets").rglob("*") if p.is_file())
+    return [ROOT / "configs/scene.json", ROOT / "configs/simulation.json", asset, *meshes]
+
+
+def identity() -> dict:
+    return {p.relative_to(ROOT).as_posix(): digest(p) for p in identity_files()}
 
 
 def main():
@@ -118,7 +141,8 @@ def main():
                               capture_output=True, text=True, check=True).stdout.strip()
     out = ROOT / "tests" / "data" / "physics_v1_reference.json"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps({"git_revision": revision, "world_xml_sha256": hashes}, indent=2) + "\n")
+    out.write_text(json.dumps({"git_revision": revision, "world_xml_sha256": hashes, "identity": identity()},
+                              indent=2) + "\n")
     print(out)
 
 
@@ -145,27 +169,49 @@ Expected: the JSON path is printed; ten `{"seed": ..., "state": ...}` lines; `re
 
 Usage (project root):
   scripts/check_v1_regression.py results/v1_reference_pre_pick results/<fresh run>
-Exit code 0 only when every reference episode has the same state, failure, steps and recoveries.
+Exit code 0 only when the candidate matched the recorded results: every episode record field
+(outcome, events, recoveries, steps, sim time, ...) except wall-clock timings, and the robot
+asset and configuration identities in manifest.json. A match is evidence, not proof that all
+behaviour is identical.
 """
 import argparse
 import json
 from pathlib import Path
 
-FIELDS = ("state", "failure", "steps", "recoveries")
+WALL_CLOCK_FIELDS = ("wall_seconds", "inference_seconds")  # machine speed, not behaviour
+MANIFEST_IDENTITY = ("asset_sha256", "scene_config", "sim_config", "seeds", "args")
+
+
+def _without_timing(record: dict) -> dict:
+    return {k: v for k, v in record.items() if k not in WALL_CLOCK_FIELDS}
 
 
 def compare(reference: Path, candidate: Path) -> list[str]:
-    ref_files = sorted(Path(reference).glob("episode_*.json"))
+    reference, candidate = Path(reference), Path(candidate)
+    ref_files = sorted(reference.glob("episode_*.json"))
     if not ref_files:
         raise ValueError(f"{reference} has no episode files")
     problems = []
+    ref_manifest, cand_manifest = reference / "manifest.json", candidate / "manifest.json"
+    if not ref_manifest.is_file() or not cand_manifest.is_file():
+        problems.append("manifest.json: missing from reference or candidate")
+    else:
+        ref_m, cand_m = json.loads(ref_manifest.read_text()), json.loads(cand_manifest.read_text())
+        for key in MANIFEST_IDENTITY:
+            ref_value, cand_value = ref_m.get(key), cand_m.get(key)
+            if key == "args":  # the run name differs by design
+                ref_value = {k: v for k, v in (ref_value or {}).items() if k != "name"}
+                cand_value = {k: v for k, v in (cand_value or {}).items() if k != "name"}
+            if ref_value != cand_value:
+                problems.append(f"manifest.json: {key} differs")
     for ref_file in ref_files:
-        cand_file = Path(candidate) / ref_file.name
+        cand_file = candidate / ref_file.name
         if not cand_file.is_file():
             problems.append(f"{ref_file.name}: missing from candidate")
             continue
-        ref, cand = json.loads(ref_file.read_text()), json.loads(cand_file.read_text())
-        for field in FIELDS:
+        ref = _without_timing(json.loads(ref_file.read_text()))
+        cand = _without_timing(json.loads(cand_file.read_text()))
+        for field in sorted(set(ref) | set(cand)):
             if ref.get(field) != cand.get(field):
                 problems.append(f"{ref_file.name}: {field} {ref.get(field)!r} != {cand.get(field)!r}")
     return problems
@@ -179,7 +225,7 @@ def main():
     problems = compare(args.reference, args.candidate)
     for line in problems:
         print(line)
-    print("v1 regression:", "FAILED" if problems else "identical")
+    print("v1 regression:", "FAILED" if problems else "matched recorded results")
     raise SystemExit(1 if problems else 0)
 
 
@@ -221,29 +267,60 @@ class PhysicsV1ReferenceTests(unittest.TestCase):
             xml = world_xml(sample_params(config, int(seed)), config)
             self.assertEqual(hashlib.sha256(xml.encode()).hexdigest(), digest, f"seed {seed}")
 
+    def test_asset_and_config_identity_is_preserved(self):
+        reference = json.loads(REFERENCE.read_text())
+        self.assertIn("configs/scene.json", reference["identity"])
+        self.assertTrue(any(name.endswith(".stl") for name in reference["identity"]))
+        self.assertEqual(load_script("record_v1_reference").identity(), reference["identity"])
+
 
 class RegressionCompareTests(unittest.TestCase):
+    MANIFEST = {"asset_sha256": "a", "scene_config": {"x": 1}, "sim_config": {"y": 2}, "seeds": [0, 1],
+                "args": {"policy": "scripted", "name": "run"}}
+
+    def folder(self, tmp: str, manifest=None) -> Path:
+        path = Path(tmp)
+        (path / "manifest.json").write_text(json.dumps(manifest or self.MANIFEST))
+        return path
+
     def write(self, folder: Path, seed: int, **fields):
-        record = {"state": "SUCCEEDED", "failure": None, "steps": 100, "recoveries": 0, "wall_seconds": 1.0}
+        record = {"state": "SUCCEEDED", "failure": None, "steps": 100, "recoveries": 0, "sim_seconds": 5.0,
+                  "events": [{"label": "OBJECT_DROPPED", "time": 1.5}], "outcome": {"cup": True},
+                  "wall_seconds": 1.0, "inference_seconds": [0.1]}
         record.update(fields)
         (folder / f"episode_{seed}.json").write_text(json.dumps(record))
 
-    def test_identical_outcomes_pass_and_wall_time_is_ignored(self):
+    def test_matching_records_pass_and_wall_time_and_run_name_are_ignored(self):
         compare = load_script("check_v1_regression").compare
         with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
-            self.write(Path(a), 0)
-            self.write(Path(b), 0, wall_seconds=9.0)
-            self.assertEqual(compare(Path(a), Path(b)), [])
+            renamed = dict(self.MANIFEST, args={"policy": "scripted", "name": "other"})
+            ref, cand = self.folder(a), self.folder(b, renamed)
+            self.write(ref, 0)
+            self.write(cand, 0, wall_seconds=9.0, inference_seconds=[0.5])
+            self.assertEqual(compare(ref, cand), [])
 
-    def test_changed_outcome_and_missing_episode_are_reported(self):
+    def test_any_outcome_or_event_difference_is_reported(self):
         compare = load_script("check_v1_regression").compare
         with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
-            self.write(Path(a), 0)
-            self.write(Path(a), 1)
-            self.write(Path(b), 0, state="FAILED", failure="TIMEOUT")
-            problems = compare(Path(a), Path(b))
-            self.assertIn("episode_0.json: state 'SUCCEEDED' != 'FAILED'", problems)
-            self.assertIn("episode_1.json: missing from candidate", problems)
+            ref, cand = self.folder(a), self.folder(b)
+            self.write(ref, 0)
+            self.write(ref, 1)
+            self.write(ref, 2)
+            self.write(cand, 0, events=[{"label": "OBJECT_DROPPED", "time": 1.55}])  # same counts, other physics
+            self.write(cand, 1, outcome={"cup": False})
+            problems = compare(ref, cand)
+            self.assertTrue(any(p.startswith("episode_0.json: events") for p in problems), problems)
+            self.assertTrue(any(p.startswith("episode_1.json: outcome") for p in problems), problems)
+            self.assertIn("episode_2.json: missing from candidate", problems)
+
+    def test_asset_or_config_identity_difference_is_reported(self):
+        compare = load_script("check_v1_regression").compare
+        with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
+            ref = self.folder(a)
+            cand = self.folder(b, dict(self.MANIFEST, asset_sha256="changed"))
+            self.write(ref, 0)
+            self.write(cand, 0)
+            self.assertEqual(compare(ref, cand), ["manifest.json: asset_sha256 differs"])
 
     def test_empty_reference_is_an_error(self):
         compare = load_script("check_v1_regression").compare
@@ -259,7 +336,11 @@ if __name__ == "__main__":
 - [ ] **Step 6: Run the tests**
 
 Run: `$env:PYTHONPATH = "src"; .venv-sim/Scripts/python.exe -m unittest discover -s tests -p "test_physics_v1_reference.py" -v`
-Expected: 4 tests, all `ok`.
+Expected: 6 tests, all `ok`.
+
+Also run the comparer on the reference against itself as a sanity check:
+`.venv-sim/Scripts/python.exe scripts/check_v1_regression.py results/v1_reference_pre_pick results/v1_reference_pre_pick`
+Expected: `v1 regression: matched recorded results`.
 
 - [ ] **Step 7: Commit (do not push)**
 
@@ -1630,7 +1711,8 @@ git commit -m "Pick plan 1 task 7: scene identity hashes, duplicate check, seed 
   - `SubstepFacts(physics_step, control_step, positions, rotations, linear_speed, angular_speed, gripper_pos, gripper_rot, verdicts)`
   - `LABEL_RULE: dict[str, str]`, `SEVERE: frozenset[str]`, `RULES = ("R1", "R2", "R3", "R4", "R5")`
   - `PickOutcome` dataclass (fields below)
-  - `PickJudge(named, spare, rules, steps, table_center, table_half)` with `.start_from(facts)`, `.update(facts) -> list[str]` (new severe labels), `.record_error(label, physics_step, control_step, detail)`, `.succeeded`, `.finish(stop, *, physics_step, control_step) -> PickOutcome`; `stop` is one of `"success"`, `"deadline"`, `"early_stop"`, `"crash"`
+  - `PickJudge(named, spare, rules, steps, table_center, table_half)` with `.start_from(facts)`, `.update(facts) -> list[str]` (new severe labels; raises `RuntimeError` if called after success), `.record_error(label, physics_step, control_step, detail)`, `.succeeded`, `.finish(stop, *, physics_step, control_step) -> PickOutcome`; `stop` is one of `"success"`, `"deadline"`, `"early_stop"`, `"crash"`
+  - `PickOutcome` reports `hold_completed` / `hold_completed_*_step` (a valid hold window happened, even in a failed episode) separately from `success_*_step`
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1698,9 +1780,13 @@ class HoldTests(unittest.TestCase):
         self.assertFalse(j.succeeded)
         j.update(facts(200, lift=0.06))
         self.assertTrue(j.succeeded)
+        with self.assertRaises(RuntimeError):  # the runner must stop at the success step
+            j.update(facts(201, lift=0.06))
         out = j.finish("success", physics_step=200, control_step=20)
         self.assertTrue(out.success)
-        self.assertEqual((out.failures, out.picked, out.hold_completed_physics_step), ([], "named_first", 200))
+        self.assertEqual((out.failures, out.picked), ([], "named_first"))
+        self.assertEqual((out.hold_completed, out.hold_completed_physics_step, out.success_physics_step),
+                         (True, 200, 200))
 
     def test_swinging_at_constant_distance_fails(self):
         j = judge()
@@ -1765,6 +1851,10 @@ class ViolationTests(unittest.TestCase):
         out = j.finish("deadline", physics_step=3000, control_step=300)
         self.assertEqual([f["label"] for f in out.failures], ["WRONG_ITEM_TOUCHED"])  # hold itself was fine
         self.assertEqual(out.failed_rules, ["R1"])
+        # the later correct hold is still reported, apart from success
+        self.assertFalse(out.success)
+        self.assertEqual((out.hold_completed, out.hold_completed_physics_step), (True, 201))
+        self.assertIsNone(out.success_physics_step)
 
     def test_no_lift_is_decided_only_at_the_deadline(self):
         j = judge()
@@ -1912,8 +2002,13 @@ class PickOutcome:
     unevaluable_rules: list
     picked: str
     lifted_both: bool
+    # A valid hold window can complete in a failed episode (e.g. the spare was touched
+    # first); it is reported apart from success so that evidence is not lost.
+    hold_completed: bool
     hold_completed_physics_step: int | None
     hold_completed_control_step: int | None
+    success_physics_step: int | None
+    success_control_step: int | None
     max_lift_m: dict
     spare_max_shift_m: float
     spare_max_yaw_deg: float
@@ -1978,7 +2073,9 @@ class PickJudge:
         if self.start is None:
             raise RuntimeError("start_from() must be called before update()")
         if self.succeeded:
-            return []
+            # The episode ends at the physics step that completed the hold; a caller that
+            # keeps stepping would hide later contacts, so this is an error, not a no-op.
+            raise RuntimeError("update() after success: the runner must stop at the success step")
         r, new = self.rules, []
         fixed = moving = named_other = False
         for verdict in f.verdicts:
@@ -2084,8 +2181,11 @@ class PickJudge:
             success=stop == "success", stop=stop, failures=ordered,
             first_failure=ordered[0]["label"] if ordered else None, failed_rules=failed_rules,
             unevaluable_rules=unevaluable, picked=picked, lifted_both=n is not None and s is not None,
-            hold_completed_physics_step=self.success_at[0] if self.success_at else None,
-            hold_completed_control_step=self.success_at[1] if self.success_at else None,
+            hold_completed=self.hold_ok_at is not None,
+            hold_completed_physics_step=self.hold_ok_at[0] if self.hold_ok_at else None,
+            hold_completed_control_step=self.hold_ok_at[1] if self.hold_ok_at else None,
+            success_physics_step=self.success_at[0] if self.success_at else None,
+            success_control_step=self.success_at[1] if self.success_at else None,
             max_lift_m=dict(self.max_lift), spare_max_shift_m=self.spare_shift, spare_max_yaw_deg=self.spare_yaw,
             cup_max_shift_m=self.cup_shift, cup_max_tilt_deg=self.cup_tilt,
             longest_eligible_streak=self.longest_streak)
@@ -2115,7 +2215,7 @@ git commit -m "Pick plan 1 task 8: success-rule judge - latched failures, grippe
 **Interfaces:**
 - Consumes: `ContactClassifier` (Task 5), `SubstepFacts` (Task 8).
 - Produces:
-  - `MujocoSimulation.step(action, *, on_substep=None, stop_on_cross_arm=True)`. `on_substep()` is called after every physics step. The defaults keep today's behaviour.
+  - `MujocoSimulation.step(action, *, on_substep=None, stop_on_cross_arm=True) -> int`. `on_substep()` is called after every physics step; **if it returns a truthy value, no further physics step is taken in this control step**. It returns the number of physics steps taken. The defaults keep today's behaviour, and existing callers ignore the return value.
   - `SIM_ERROR_WARNINGS = ("mjWARN_BADQACC", "mjWARN_CONTACTFULL", "mjWARN_CNSTRFULL")`
   - `SimulatorFailure(RuntimeError)`
   - `FactReader(sim, classifier, gripper_site="right_arm/gripperframe")` with `.read(physics_step, control_step) -> SubstepFacts` and `.other_warnings: dict[str, int]`
@@ -2162,9 +2262,23 @@ class FactReaderTests(unittest.TestCase):
 
     def test_hook_runs_after_every_physics_step(self):
         times = []
-        self.hold(on_substep=lambda: times.append(float(self.sim.data.time)))
-        self.assertEqual(len(times), self.sim.substeps)
+        taken = self.sim.step(BimanualAction(self.sim.observe().timestamp, self.sim.home_targets),
+                              on_substep=lambda: times.append(float(self.sim.data.time)))
+        self.assertEqual((len(times), taken), (self.sim.substeps, self.sim.substeps))
         self.assertTrue(all(b > a for a, b in zip(times, times[1:])))
+
+    def test_hook_can_stop_at_the_triggering_physics_step(self):
+        calls = []
+
+        def stop_at_third():
+            calls.append(float(self.sim.data.time))
+            return len(calls) == 3
+
+        start = float(self.sim.data.time)
+        taken = self.sim.step(BimanualAction(self.sim.observe().timestamp, self.sim.home_targets),
+                              on_substep=stop_at_third)
+        self.assertEqual((taken, len(calls)), (3, 3))
+        self.assertAlmostEqual(float(self.sim.data.time) - start, 3 * self.sim.config["physics_dt"])
 
     def test_brief_contact_between_control_updates_is_caught(self):
         model, data = self.sim.model, self.sim.data
@@ -2220,18 +2334,21 @@ Expected: `ModuleNotFoundError: No module named 'rescuehandsai.pick_facts'`.
 Replace the signature and the substep loop of `MujocoSimulation.step`. Everything before `for _ in range(self.substeps):` stays as it is:
 
 ```python
-    def step(self, action: BimanualAction, *, on_substep=None, stop_on_cross_arm: bool = True):
-        """on_substep() runs after every physics step (pick evaluation reads contacts there).
-        stop_on_cross_arm=False lets the pick judge score arm-arm contact instead of raising."""
+    def step(self, action: BimanualAction, *, on_substep=None, stop_on_cross_arm: bool = True) -> int:
+        """on_substep() runs after every physics step (pick evaluation reads contacts there);
+        a truthy return stops this control step at that physics step. stop_on_cross_arm=False
+        lets the pick judge score arm-arm contact instead of raising. Returns physics steps taken."""
 ```
 (unchanged validation and fault lines)
 ```python
+        taken = 0
         for _ in range(self.substeps):
             mujoco.mj_step(self.model, self.data)
+            taken += 1
             if not np.isfinite(self.data.qpos).all() or not np.isfinite(self.data.qvel).all():
                 raise RuntimeError("SIMULATION_ERROR: nonfinite physical state")
-            if on_substep is not None:
-                on_substep()
+            if on_substep is not None and on_substep():
+                return taken
             for c in self.data.contact:
                 if c.dist > 0:
                     continue
@@ -2240,6 +2357,7 @@ Replace the signature and the substep loop of `MujocoSimulation.step`. Everythin
                 if stop_on_cross_arm and a is not None and b is not None and a != b:
                     raise RuntimeError(f"COLLISION: {self._geom_name(int(c.geom1))} with "
                                        f"{self._geom_name(int(c.geom2))}; simulation stopped")
+        return taken
 ```
 
 - [ ] **Step 4: Implement `pick_facts.py`**
@@ -2299,7 +2417,7 @@ class FactReader:
 - [ ] **Step 5: Run the new tests and the whole suite**
 
 Run: `$env:PYTHONPATH = "src"; .venv-sim/Scripts/python.exe -m unittest discover -s tests -p "test_pick_facts.py" -v`
-Expected: 5 tests `ok`.
+Expected: 6 tests `ok`.
 
 Run: `$env:PYTHONPATH = "src"; .venv-sim/Scripts/python.exe -m unittest discover -s tests`
 Expected: `OK`.
@@ -3121,12 +3239,14 @@ Any other exception (a harness bug) is not caught, so the run stops loudly.
 
 ```python
 import unittest
+from unittest.mock import patch
 
 import mujoco
 
 from rescuehandsai.contracts import BimanualAction
 from rescuehandsai.pick_cells import make_pick_task
 from rescuehandsai.pick_config import load_rules
+from rescuehandsai.pick_outcome import PickJudge
 from rescuehandsai.pick_records import InvalidRun
 from rescuehandsai.pick_runner import PickEpisodeRunner
 from rescuehandsai.sim import MujocoSimulation
@@ -3167,6 +3287,31 @@ class BadQacc(HoldHome):
     def act(self, obs):
         self.sim.data.warning[int(mujoco.mjtWarning.mjWARN_BADQACC)].number += 1
         return super().act(obs)
+
+
+class SuccessThenCollision(PickJudge):
+    """Hold completes at physics step 3; a collision would follow at step 5 of the same control step."""
+
+    def update(self, f):
+        if self.succeeded:
+            return super().update(f)  # raises: the runner must have stopped
+        if f.physics_step == 3:
+            self.success_at = self.hold_ok_at = (f.physics_step, f.control_step)
+            return []
+        if f.physics_step == 5:
+            self._fail("ARM_ARM_CONTACT", f, "late collision")
+            return ["ARM_ARM_CONTACT"]
+        return []
+
+
+class SevereAtFour(PickJudge):
+    def update(self, f):
+        if f.physics_step == 4:
+            self._fail("ARM_ARM_CONTACT", f, "collision")
+            return ["ARM_ARM_CONTACT"]
+        if f.physics_step > 4:
+            raise AssertionError("physics continued after a severe violation")
+        return []
 
 
 class PickRunnerTests(unittest.TestCase):
@@ -3221,6 +3366,21 @@ class PickRunnerTests(unittest.TestCase):
             self.run_policy(BadQacc())
         self.assertEqual(ctx.exception.label, "SIM_ERROR")
         self.assertIn("mjWARN_BADQACC", ctx.exception.detail)
+
+    def test_success_stops_at_its_physics_step_before_a_later_collision(self):
+        with patch("rescuehandsai.pick_runner.PickJudge", SuccessThenCollision):
+            record = self.run_policy(HoldHome())
+        self.assertTrue(record["success"])
+        self.assertEqual((record["physics_steps"], record["control_steps"]), (3, 1))
+        self.assertEqual(record["outcome"]["failures"], [])
+        self.assertEqual(record["outcome"]["success_physics_step"], 3)
+
+    def test_severe_violation_stops_at_its_physics_step(self):
+        with patch("rescuehandsai.pick_runner.PickJudge", SevereAtFour):
+            record = self.run_policy(HoldHome())
+        self.assertFalse(record["success"])
+        self.assertEqual((record["physics_steps"], record["outcome"]["stop"]), (4, "early_stop"))
+        self.assertEqual(record["outcome"]["first_failure"], "ARM_ARM_CONTACT")
 
     def test_physics_version_mismatch_is_a_contract_mismatch(self):
         v1 = MujocoSimulation()
@@ -3325,8 +3485,10 @@ class PickEpisodeRunner:
         severe = []
 
         def on_substep():
+            # Stop at the physics step that decides the episode: success or a severe violation.
             counters["physics"] += 1
             severe.extend(judge.update(reader.read(counters["physics"], counters["control"])))
+            return judge.succeeded or bool(severe)
 
         while stop is None and counters["control"] < steps.deadline_control:
             try:
@@ -3381,7 +3543,7 @@ class PickEpisodeRunner:
 - [ ] **Step 4: Run the tests**
 
 Run: `$env:PYTHONPATH = "src"; .venv-sim/Scripts/python.exe -m unittest discover -s tests -p "test_pick_runner.py" -v`
-Expected: 6 tests `ok`.
+Expected: 8 tests `ok`.
 
 - [ ] **Step 5: Commit (do not push)**
 
@@ -3410,9 +3572,9 @@ $env:PYTHONPATH = "src"
 .venv-sim/Scripts/python.exe scripts/evaluate.py --policy scripted --seeds 0:10 --supervisor on --name v1_regression_after_plan1
 .venv-sim/Scripts/python.exe scripts/check_v1_regression.py results/v1_reference_pre_pick results/v1_regression_after_plan1
 ```
-Expected: the last line is `v1 regression: identical` with exit code 0.
+Expected: the last line is `v1 regression: matched recorded results` with exit code 0. Also run `.venv-sim/Scripts/python.exe -m unittest discover -s tests -p "test_physics_v1_reference.py"`: the world XML and asset/config identities must still match the reference.
 
-If anything differs, **stop**. List the differing episodes and find which change caused them (for example with `git stash` or by testing each task's commit). Version 1 must be unchanged (§2).
+If anything differs, **stop**. List the differing episodes and find which change caused them (for example by testing each task's commit). Version 1 must match its recorded results (§2). In the report, say "matched recorded results", not "identical behaviour".
 
 - [ ] **Step 3: Check that nothing was pushed and the tree is clean**
 
@@ -3425,7 +3587,7 @@ Expected: the Plan 1 commits are listed, which means they exist locally and were
 
 ```powershell
 git add results/v1_regression_after_plan1
-git commit -m "Pick plan 1 task 14: v1 regression run identical to the pre-pick reference"
+git commit -m "Pick plan 1 task 14: v1 regression run matched the recorded pre-pick results"
 ```
 
 - [ ] **Step 5: Report to the owner**
