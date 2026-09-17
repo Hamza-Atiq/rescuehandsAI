@@ -78,6 +78,12 @@ class ContactClassifierTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             ContactClassifier(self.sim.model, "fork", bad)
 
+    def test_non_colliding_shape_listed_as_a_scene_geom_is_rejected(self):
+        bad = copy.deepcopy(self.config)
+        bad["scene_geoms"]["table"].append("plate_rim")  # plate_rim is decorative: contype=0
+        with self.assertRaises(ValueError):
+            ContactClassifier(self.sim.model, "fork", bad)
+
     def test_missing_geom_is_rejected(self):
         bad = copy.deepcopy(self.config)
         bad["jaw_grasp_geoms"]["fixed"].append("no_such_pad")
@@ -122,6 +128,12 @@ class ContactClassifierTests(unittest.TestCase):
         pad = self.g("right_arm/fixed_jaw_box5")
         move_geom_to(self.sim, pad, self.sim.data.geom_xpos[spoon])
         self.assertEqual(self.verdict_for(pad, spoon).labels, ("WRONG_ITEM_TOUCHED",))
+
+    def test_left_arm_shape_on_the_spare_is_also_wrong_item_touched(self):
+        spoon = self.g("spoon_handle")
+        left_pad = self.g("left_arm/fixed_jaw_box5")
+        move_geom_to(self.sim, left_pad, self.sim.data.geom_xpos[spoon])
+        self.assertEqual(self.verdict_for(left_pad, spoon).labels, ("WRONG_ITEM_TOUCHED",))
 
     def test_housing_box_and_jaw_mesh_are_not_grasp_contacts(self):
         model = self.sim.model
