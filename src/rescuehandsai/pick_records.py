@@ -40,7 +40,7 @@ def load_model_or_invalid(factory):
         raise InvalidRun("MODEL_LOAD_ERROR", f"{type(exc).__name__}: {exc}") from exc
 
 
-def check_contract(expected: dict, actual: dict) -> None:
+def check_run_contract(expected: dict, actual: dict) -> None:
     diff = {key: {"expected": value, "actual": actual.get(key)}
             for key, value in expected.items() if actual.get(key) != value}
     if diff:
@@ -103,6 +103,8 @@ class AttemptLedger:
         expected = len(self.attempts(key)) + 1
         if attempt != expected:
             raise ValueError(f"{key}: expected attempt {expected}, got {attempt}")
+        if not valid and label not in INVALID_LABELS:
+            raise ValueError(f"invalid attempt must have a label in {INVALID_LABELS}, got {label!r}")
         self._append({"type": "attempt", "key": key, "attempt": attempt, "valid": valid, "label": label,
                       "file": filename})
 

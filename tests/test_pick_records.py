@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from rescuehandsai.pick_records import (RESUME_KEYS, AlreadyScored, AttemptLedger, EvaluationBlocked, InvalidRun,
-                                        ResumeRefused, RetryNeedsDiagnosis, check_contract, check_resume,
+                                        ResumeRefused, RetryNeedsDiagnosis, check_run_contract, check_resume,
                                         episode_filename, episode_key, load_model_or_invalid, write_episode)
 
 
@@ -25,9 +25,9 @@ class LabelTests(unittest.TestCase):
         self.assertEqual(load_model_or_invalid(lambda: "model"), "model")
 
     def test_contract_mismatch_names_every_difference(self):
-        check_contract({"physics_version": 2, "cameras": ["a"]}, {"physics_version": 2, "cameras": ["a"], "x": 1})
+        check_run_contract({"physics_version": 2, "cameras": ["a"]}, {"physics_version": 2, "cameras": ["a"], "x": 1})
         with self.assertRaises(InvalidRun) as ctx:
-            check_contract({"physics_version": 2, "state_order": ["a", "b"]}, {"physics_version": 1, "state_order": ["b", "a"]})
+            check_run_contract({"physics_version": 2, "state_order": ["a", "b"]}, {"physics_version": 1, "state_order": ["b", "a"]})
         self.assertEqual(ctx.exception.label, "CONTRACT_MISMATCH")
         self.assertIn("physics_version", ctx.exception.detail)
         self.assertIn("state_order", ctx.exception.detail)
@@ -78,6 +78,34 @@ class LedgerTests(unittest.TestCase):
         self.assertEqual(path.name, "episode_3100007_F-B_a1.json")
         with self.assertRaises(FileExistsError):
             write_episode(self.run_dir, 3100007, "F-B", 1, {"success": True})
+
+    def test_invalid_label_is_rejected(self):
+        ledger = AttemptLedger(self.run_dir)
+        with self.assertRaises(ValueError) as ctx:
+            ledger.record(self.key, 1, valid=False, label="POLICY_ERROR", filename="x")
+        self.assertIn("POLICY_ERROR", str(ctx.exception))
+
+    def test_sim_error_label_is_accepted(self):
+        ledger = AttemptLedger(self.run_dir)
+        ledger.record(self.key, 1, valid=False, label="SIM_ERROR", filename="x")
+        self.assertEqual(ledger.attempts(self.key)[0]["label"], "SIM_ERROR")
+
+    def test_reload_preserves_retry_needs_diagnosis(self):
+        ledger = AttemptLedger(self.run_dir)
+        ledger.record(self.key, 1, valid=False, label="SIM_ERROR", filename="x")
+        again = AttemptLedger(self.run_dir)
+        with self.assertRaises(RetryNeedsDiagnosis):
+            again.next_attempt(self.key)
+
+    def test_add_diagnosis_validation(self):
+        ledger = AttemptLedger(self.run_dir)
+        ledger.record(self.key, 1, valid=False, label="SIM_ERROR", filename="x")
+        ledger.add_diagnosis(self.key, 1, "test diagnosis")
+        with self.assertRaises(ValueError):
+            ledger.add_diagnosis(self.key, 2, "attempt 2 does not exist")
+        ledger.record(self.key, 2, valid=True, label="NO_LIFT", filename="x")
+        with self.assertRaises(ValueError):
+            ledger.add_diagnosis(self.key, 2, "attempt 2 is valid, not invalid")
 
 
 class ResumeTests(unittest.TestCase):
