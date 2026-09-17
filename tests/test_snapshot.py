@@ -1,7 +1,10 @@
 import subprocess
+import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from rescuehandsai.snapshot import (SnapshotRefused, asset_files, asset_hash, file_digest, runtime_versions,
                                     snapshot_record, source_hash, uncommitted_files)
@@ -52,7 +55,16 @@ class SnapshotTests(unittest.TestCase):
             snapshot_record(self.root, self.xml, strict=True)
         record = snapshot_record(self.root, self.xml, strict=False)
         self.assertIn("src/extra.py", record["uncommitted"])
-        self.assertIsNotNone(record["uncommitted"]["src/extra.py"])
+        self.assertEqual(record["uncommitted"]["src/extra.py"],
+                          file_digest(self.root / "src" / "extra.py"))
+
+    def test_renamed_file_reports_destination_path(self):
+        git(self.root, "mv", "src/a.py", "src/b.py")
+        self.assertIn("src/b.py", uncommitted_files(self.root))
+        self.assertNotIn("src/a.py -> src/b.py", uncommitted_files(self.root))
+        record = snapshot_record(self.root, self.xml, strict=False)
+        self.assertEqual(record["uncommitted"]["src/b.py"],
+                          file_digest(self.root / "src" / "b.py"))
 
     def test_pycache_is_ignored(self):
         before = source_hash(self.root)[0]
@@ -82,6 +94,22 @@ class SnapshotTests(unittest.TestCase):
         self.assertIn("python", runtime)
         self.assertIn("mujoco", runtime["packages"])
         self.assertIn("devices", runtime)
+
+    def test_broken_openvino_install_does_not_crash_runtime_versions(self):
+        # A present-but-broken OpenVINO install (missing plugin DLLs, partial install)
+        # must degrade like an absent one, not abort runtime_versions()/snapshot_record.
+        fake_openvino = types.ModuleType("openvino")
+
+        class BrokenCore:
+            def __init__(self):
+                raise RuntimeError("missing plugin dll")
+
+        fake_openvino.Core = BrokenCore
+        with mock.patch.dict(sys.modules, {"openvino": fake_openvino}):
+            runtime = runtime_versions()
+        self.assertIn("openvino", runtime["devices"])
+        self.assertIn("error", runtime["devices"]["openvino"])
+        self.assertIn("RuntimeError", runtime["devices"]["openvino"]["error"])
 
 
 if __name__ == "__main__":

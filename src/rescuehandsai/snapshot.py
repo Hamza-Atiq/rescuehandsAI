@@ -50,8 +50,15 @@ def _git(root, *args) -> str:
 
 def uncommitted_files(root) -> list:
     out = _git(root, "status", "--porcelain", "--untracked-files=all", "--", *SNAPSHOT_DIRS)
-    return sorted(line[3:].strip().strip('"') for line in out.splitlines()
-                  if line.strip() and "__pycache__" not in line)
+    paths = []
+    for line in out.splitlines():
+        if not line.strip() or "__pycache__" in line:
+            continue
+        path = line[3:].strip().strip('"')
+        if " -> " in path:  # renames/copies: "old -> new"; keep the destination path
+            path = path.split(" -> ", 1)[1].strip().strip('"')
+        paths.append(path)
+    return sorted(paths)
 
 
 def asset_files(asset_xml) -> list:
@@ -77,22 +84,33 @@ def _devices() -> dict:
     devices = {}
     try:
         import openvino as ov
-        core = ov.Core()
-        for name in core.available_devices:
-            info = {"name": str(core.get_property(name, "FULL_DEVICE_NAME"))}
-            try:
-                info["driver_version"] = str(core.get_property(name, "GPU_DRIVER_VERSION"))
-            except Exception:
-                info["driver_version"] = "unavailable"
-            devices[f"openvino:{name}"] = info
     except ImportError:
         pass
+    else:
+        # Present-but-broken installs (missing plugin DLLs, partial install) must not
+        # abort snapshot_record; record the failure instead of losing it (device
+        # reporting is descriptive only).
+        try:
+            core = ov.Core()
+            for name in core.available_devices:
+                info = {"name": str(core.get_property(name, "FULL_DEVICE_NAME"))}
+                try:
+                    info["driver_version"] = str(core.get_property(name, "GPU_DRIVER_VERSION"))
+                except Exception:
+                    info["driver_version"] = "unavailable"
+                devices[f"openvino:{name}"] = info
+        except Exception as exc:
+            devices["openvino"] = {"error": f"{type(exc).__name__}: {exc}"}
     try:
         import torch
-        if torch.cuda.is_available():
-            devices["cuda:0"] = {"name": torch.cuda.get_device_name(0), "cuda": str(torch.version.cuda)}
     except ImportError:
         pass
+    else:
+        try:
+            if torch.cuda.is_available():
+                devices["cuda:0"] = {"name": torch.cuda.get_device_name(0), "cuda": str(torch.version.cuda)}
+        except Exception as exc:
+            devices["torch"] = {"error": f"{type(exc).__name__}: {exc}"}
     try:
         out = subprocess.run(["nvidia-smi", "--query-gpu=name,driver_version", "--format=csv,noheader"],
                              capture_output=True, text=True, timeout=20)
