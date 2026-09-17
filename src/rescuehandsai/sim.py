@@ -195,7 +195,10 @@ class MujocoSimulation:
             self.faults[name] = min(high, max(low, float(value)))
 
     # -- stepping ------------------------------------------------------------
-    def step(self, action: BimanualAction):
+    def step(self, action: BimanualAction, *, on_substep=None, stop_on_cross_arm: bool = True) -> int:
+        """on_substep() runs after every physics step (pick evaluation reads contacts there);
+        a truthy return stops this control step at that physics step. stop_on_cross_arm=False
+        lets the pick judge score arm-arm contact instead of raising. Returns physics steps taken."""
         cfg = self.config
         values = validate_action(action, self.names, self.limits, self.previous,
                                  now=float(self.data.time), max_age=cfg["max_action_age"],
@@ -204,18 +207,23 @@ class MujocoSimulation:
         if self.faults:
             values = tuple(self.faults.get(n, v) for n, v in zip(self.names, values))
         self.data.ctrl[self._actuators] = values
+        taken = 0
         for _ in range(self.substeps):
             mujoco.mj_step(self.model, self.data)
+            taken += 1
             if not np.isfinite(self.data.qpos).all() or not np.isfinite(self.data.qvel).all():
                 raise RuntimeError("SIMULATION_ERROR: nonfinite physical state")
+            if on_substep is not None and on_substep():
+                return taken
             for c in self.data.contact:
                 if c.dist > 0:
                     continue
                 self.contact_samples += 1
                 a, b = self.geom_arm[c.geom1], self.geom_arm[c.geom2]
-                if a is not None and b is not None and a != b:
+                if stop_on_cross_arm and a is not None and b is not None and a != b:
                     raise RuntimeError(f"COLLISION: {self._geom_name(int(c.geom1))} with "
                                        f"{self._geom_name(int(c.geom2))}; simulation stopped")
+        return taken
 
     def close(self):
         for renderer in self._renderers.values():
