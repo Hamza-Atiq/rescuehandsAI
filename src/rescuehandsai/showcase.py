@@ -17,7 +17,8 @@ def scene_identity(sim) -> str:
     """SHA-256 of the current seed's world XML plus the robot asset file.
 
     Saved with evaluation states; a replay rebuilds the scene and must get the same value."""
-    digest = hashlib.sha256(world_xml(sim.scene_params, sim.scene_config).encode())
+    digest = hashlib.sha256(world_xml(sim.scene_params, sim.scene_config,
+                                      physics_version=getattr(sim, "physics_version", 1)).encode())
     digest.update(Path(sim.asset_path).read_bytes())
     return digest.hexdigest()
 
@@ -32,7 +33,8 @@ class ShowcaseRenderer:
             return
         if self.renderer is not None:
             self.renderer.close()
-        self.model = build_model(sim.scene_params, sim.scene_config, sim.asset_path, showcase=True)
+        self.model = build_model(sim.scene_params, sim.scene_config, sim.asset_path, showcase=True,
+                                 physics_version=getattr(sim, "physics_version", 1))
         if (self.model.nq, self.model.nv, self.model.nbody) != (sim.model.nq, sim.model.nv, sim.model.nbody):
             raise RuntimeError("showcase twin must have the same bodies and joints as the live scene")
         self.data = mujoco.MjData(self.model)

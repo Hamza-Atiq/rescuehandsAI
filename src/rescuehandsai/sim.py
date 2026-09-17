@@ -8,7 +8,7 @@ import numpy as np
 
 from .contracts import BimanualAction, ObjectState, Observation, PrivilegedState
 from .control import validate_action
-from .scene import ROOT, SCENE_ITEMS, build_model, load_config, sample_params
+from .scene import ROOT, SCENE_ITEMS, build_model, check_physics_version, load_config, sample_params
 
 JOINTS = ("shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper")
 ARMS = ("left_arm", "right_arm")
@@ -25,7 +25,8 @@ def is_software_renderer(name: str) -> bool:
 
 
 class MujocoSimulation:
-    def __init__(self, config_path=None, scene_config_path=None, seed: int = 0):
+    def __init__(self, config_path=None, scene_config_path=None, seed: int = 0, physics_version: int = 1):
+        self.physics_version = check_physics_version(physics_version)
         self.config = json.loads(Path(config_path or ROOT / "configs/simulation.json").read_text())
         cfg = self.config
         for key in ("physics_dt", "control_dt", "max_command_delta"):
@@ -71,12 +72,16 @@ class MujocoSimulation:
             root = model.body(int(model.body_rootid[model.geom_bodyid[g]])).name
             self.geom_arm.append(next((arm for arm in ARMS if root.startswith(arm + "/")), None))
 
-    def reset(self, seed: int, instruction: str | None = None):
+    def reset(self, seed: int, instruction: str | None = None, *, params=None):
+        """params: explicit SceneParams (pick cells); its seed must equal `seed`."""
+        if params is not None and params.seed != seed:
+            raise ValueError(f"params were sampled for seed {params.seed}, not {seed}")
         self.seed = seed
         self.instruction = instruction or self.config["instruction"]
-        self.scene_params = sample_params(self.scene_config, seed)
+        self.scene_params = params if params is not None else sample_params(self.scene_config, seed)
         self.close()
-        self.model = build_model(self.scene_params, self.scene_config, self.asset_path)
+        self.model = build_model(self.scene_params, self.scene_config, self.asset_path,
+                                 physics_version=self.physics_version)
         self.model.opt.timestep = self.config["physics_dt"]
         self.data = mujoco.MjData(self.model)
         self._bind()

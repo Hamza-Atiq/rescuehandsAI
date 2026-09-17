@@ -16,6 +16,19 @@ ARMS = ("left_arm", "right_arm")
 UTENSILS = ("fork", "spoon")
 SCENE_ITEMS = ("cup",) + UTENSILS
 
+# Physics version 1 is the hackathon world and stays byte-identical. In version 1 the
+# SO-101 gripper shapes (priority="1", friction 1) win every jaw contact, so the
+# utensil's sampled friction never matters. Version 2 gives utensil shapes priority 2,
+# so their sampled sliding friction governs jaw and table contacts; condim and the
+# torsional/rolling values copy what the gripper already imposed on jaw contacts.
+PHYSICS_VERSIONS = (1, 2)
+
+
+def check_physics_version(physics_version: int) -> int:
+    if physics_version not in PHYSICS_VERSIONS:
+        raise ValueError(f"physics_version must be one of {PHYSICS_VERSIONS}, got {physics_version!r}")
+    return physics_version
+
 
 @dataclass(frozen=True)
 class SceneParams:
@@ -82,13 +95,16 @@ def _box_inertia(mass, half):
     return (mass * (y * y + z * z) / 12, mass * (x * x + z * z) / 12, mass * (x * x + y * y) / 12)
 
 
-def _utensil_xml(item: str, params: SceneParams, config: dict) -> str:
+def _utensil_xml(item: str, params: SceneParams, config: dict, physics_version: int = 1) -> str:
     s = params.utensil_scale[item]
     hx, hy, hz = config["utensil"]["handle_half"]
     hx *= s
     x, y, yaw = params.poses[item]
     mass, fr = params.masses[item], params.frictions[item]
-    common = f'friction="{fr:.4g} 0.05 0.002" condim="4" solref="0.01 1"'
+    if physics_version == 1:
+        common = f'friction="{fr:.4g} 0.05 0.002" condim="4" solref="0.01 1"'
+    else:
+        common = f'friction="{fr:.4g} 5e-3 5e-4" condim="6" solref="0.01 1" priority="2"'
     if item == "fork":
         rgba = "0.50 0.52 0.58 1"
         head = [f'<geom name="fork_neck" type="box" size="{0.006*s:.4g} {0.012*s:.4g} {hz*0.7:.4g}" '
@@ -148,8 +164,9 @@ def _showcase_xml():
     return asset, "".join(extras)
 
 
-def world_xml(params: SceneParams, config: dict, showcase: bool = False) -> str:
+def world_xml(params: SceneParams, config: dict, showcase: bool = False, physics_version: int = 1) -> str:
     """The MJCF world. showcase=True adds presentation-only extras; the default output is unchanged."""
+    check_physics_version(physics_version)
     tx, ty = config["table"]["center"]
     thx, thy = config["table"]["half_size"]
     plate, mat = config["plate"], config["mat"]
@@ -198,21 +215,21 @@ def world_xml(params: SceneParams, config: dict, showcase: bool = False) -> str:
       <geom name="cup_top" type="cylinder" size="{r * 0.8:.5f} 0.0005" pos="0 0 {hh:.5f}"
             contype="0" conaffinity="0" rgba="0.05 0.08 0.15 1" mass="0"/>
     </body>
-    {"".join(_utensil_xml(item, params, config) for item in UTENSILS)}
+    {"".join(_utensil_xml(item, params, config, physics_version) for item in UTENSILS)}
     {cameras}
   </worldbody>
 </mujoco>"""
 
 
 def build_model(params: SceneParams, config: dict | None = None, asset_path: Path | None = None,
-                showcase: bool = False):
+                showcase: bool = False, physics_version: int = 1):
     config = config or load_config()
     if asset_path is None:
         sim_cfg = json.loads((ROOT / "configs/simulation.json").read_text())
         asset_path = (ROOT / sim_cfg["asset_path"]).resolve()
     if not Path(asset_path).is_file():
         raise FileNotFoundError("SO-101 model missing. Follow the asset setup in README.md.")
-    spec = mujoco.MjSpec.from_string(world_xml(params, config, showcase=showcase))
+    spec = mujoco.MjSpec.from_string(world_xml(params, config, showcase=showcase, physics_version=physics_version))
     for arm in ARMS:
         mount = config["arms"][arm]
         yaw = mount["yaw"]
