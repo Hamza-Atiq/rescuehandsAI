@@ -1,0 +1,39 @@
+{
+  "git_revision": "a19148954f5aa3b1e60e1b162d001f2a8d65528d",
+  "world_xml_sha256": {
+    "0": "adfbac2cff1d37bf82e9bc608a722586dea8219a962d872ccdba0d6cf3409bd9",
+    "1": "9be7f022e2f7bc402fed3fdbfee5b584fed7ec5be2f850e9f938e807a2fb4bb1",
+    "2": "0155e9cb15508390e531cc49e73366d36702cc429dde4aadfeb1e928c002c7a1",
+    "3": "3690bb08703a930bd3045b681a78f289ed5716a4af3fbc69dbfd1eb4ec961f96",
+    "4": "aa1a3bd7e233ca48c9c05f7f256181ea13d68c9371df321b38daad67203b2fd3",
+    "5": "8b4fa6ad548ea3bd6a80e58bb1b6830d44ac14768677024a687170fdfd4ce4f1",
+    "6": "7ca164a25267073a2fab7c674ae3e2a0fe05a7dac9545c36ff81f256bd2ea48c",
+    "7": "0c989614940555d8ff7dc823c225ead83a178df3cb405c12dd8798e434e8da22",
+    "8": "9529cc31f8afc134111943b82286a243d16ea0d8d7948cc9cd7d2d1db3d2480c",
+    "9": "b8f77842984a31224fad8bf94b28dbd9639a16361d3d1bcb6e0e66f459ccc7e6"
+  },
+  "identity": {
+    "configs/scene.json": "e3114ca8e944a6f01e6ab3bed715d94d7f6e8a9f086aeb607ff2b3bfbf2eb475",
+    "configs/simulation.json": "b4b7780270377e675c7aba7c13f7131f788f55d38e32ef370618f28ecf5629d9",
+    ".cache/menagerie/robotstudio_so101/so101.xml": "5ad49f2b45c083baac9ffe5d4d3213a5da7eac8039095bb2df177a697aae8308",
+    ".cache/menagerie/robotstudio_so101/assets/base_motor_holder_so101_v1.stl": "8cd2f241037ea377af1191fffe0dd9d9006beea6dcc48543660ed41647072424",
+    ".cache/menagerie/robotstudio_so101/assets/base_so101_v2.stl": "bb12b7026575e1f70ccc7240051f9d943553bf34e5128537de6cd86fae33924d",
+    ".cache/menagerie/robotstudio_so101/assets/motor_holder_so101_base_v1.stl": "31242ae6fb59d8b15c66617b88ad8e9bded62d57c35d11c0c43a70d2f4caa95b",
+    ".cache/menagerie/robotstudio_so101/assets/motor_holder_so101_wrist_v1.stl": "887f92e6013cb64ea3a1ab8675e92da1e0beacfd5e001f972523540545e08011",
+    ".cache/menagerie/robotstudio_so101/assets/moving_jaw_so101_gripper_part0_v1.stl": "3a92e115d1934d4c45cff808c4eff2ea10361a137a7f89940033a1f8a821b88c",
+    ".cache/menagerie/robotstudio_so101/assets/moving_jaw_so101_gripper_part1_v1.stl": "d10f6c671d26f62988ec95efee9370a0657b5833b3c5f8aad59fd69a87ef2aee",
+    ".cache/menagerie/robotstudio_so101/assets/moving_jaw_so101_gripper_v1.stl": "e8a5dc040b98e27453a5b74f9087d1dbca14589cf9a17c4de7868d5ab98413cd",
+    ".cache/menagerie/robotstudio_so101/assets/moving_jaw_so101_v1.stl": "785a9dded2f474bc1d869e0d3dae398a3dcd9c0c345640040472210d2861fa9d",
+    ".cache/menagerie/robotstudio_so101/assets/rotation_pitch_so101_v1.stl": "9be900cc2a2bf718102841ef82ef8d2873842427648092c8ed2ca1e2ef4ffa34",
+    ".cache/menagerie/robotstudio_so101/assets/sts3215_03a_no_horn_v1.stl": "75ef3781b752e4065891aea855e34dc161a38a549549cd0970cedd07eae6f887",
+    ".cache/menagerie/robotstudio_so101/assets/sts3215_03a_v1.stl": "a37c871fb502483ab96c256baf457d36f2e97afc9205313d9c5ab275ef941cd0",
+    ".cache/menagerie/robotstudio_so101/assets/under_arm_so101_v1.stl": "d01d1f2de365651dcad9d6669e94ff87ff7652b5bb2d10752a66a456a86dbc71",
+    ".cache/menagerie/robotstudio_so101/assets/upper_arm_so101_v1.stl": "475056e03a17e71919b82fd88ab9a0b898ab50164f2a7943652a6b2941bb2d4f",
+    ".cache/menagerie/robotstudio_so101/assets/waveshare_mounting_plate_so101_v2.stl": "e197e24005a07d01bbc06a8c42311664eaeda415bf859f68fa247884d0f1a6e9",
+    ".cache/menagerie/robotstudio_so101/assets/wrist_roll_follower_so101_camera_mount.stl": "58c457b33a26d9c9bb337aa351173e7123f84719a93f486541adef6eba57ae21",
+    ".cache/menagerie/robotstudio_so101/assets/wrist_roll_follower_so101_gripper_part0_v1.stl": "370eb470a6ab48b08febcaeb5274d2bcc91246692532ce12c795fb82977def72",
+    ".cache/menagerie/robotstudio_so101/assets/wrist_roll_follower_so101_gripper_v1.stl": "65f32debcf265420c0160afe004f8befc5df4b3e578fd59ebaa62eade0371224",
+    ".cache/menagerie/robotstudio_so101/assets/wrist_roll_follower_so101_v1.stl": "4b17b410a12d64ec39554abc3e8054d8a97384b2dc4a8d95a5ecb2a93670f5f4",
+    ".cache/menagerie/robotstudio_so101/assets/wrist_roll_pitch_so101_v2.stl": "6c7ec5525b4d8b9e397a30ab4bb0037156a5d5f38a4adf2c7d943d6c56eda5ae"
+  }
+}
