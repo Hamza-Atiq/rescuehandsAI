@@ -102,5 +102,60 @@ class ContactFrictionTests(unittest.TestCase):
         self.assertAlmostEqual(self.jaw_contact_friction(2, 1.2), 1.2, places=6)
 
 
+from rescuehandsai.expert import ScriptedExpert
+from rescuehandsai.task import make_task
+
+
+def fork_in_gripper_frame(sim):
+    site = sim.data.site("right_arm/gripperframe")
+    rotation = site.xmat.reshape(3, 3)
+    return rotation.T @ (sim.data.body("fork").xpos - site.xpos)
+
+
+def lift_slip(physics_version, seed, friction, max_steps=160):
+    """Teacher grasp on the fork; return (slip in gripper frame over the first lift, fork rise).
+
+    Returns None when the teacher never reaches its first lift without staging."""
+    sim = MujocoSimulation(physics_version=physics_version)
+    try:
+        params = sample_params(sim.scene_config, seed)
+        params = replace(params, frictions={**params.frictions, "fork": friction})
+        sim.reset(seed, params=params)
+        expert = ScriptedExpert(sim, make_task(seed, utensil="fork", template=0), subtasks=("pick_utensil",))
+        before = start_z = None
+        for _ in range(max_steps):
+            action = expert.act(sim.observe())
+            if expert.phase.startswith("stage_"):  # the left arm is staging the utensil: not this test
+                return None
+            if expert.phase == "utensil_lift" and before is None:
+                before, start_z = fork_in_gripper_frame(sim), float(sim.data.body("fork").xpos[2])
+            if before is not None and expert.phase != "utensil_lift":
+                break
+            sim.step(action)
+        if before is None:
+            return None
+        return float(np.linalg.norm(fork_in_gripper_frame(sim) - before)), float(sim.data.body("fork").xpos[2] - start_z)
+    finally:
+        sim.close()
+
+
+class SlipTest(unittest.TestCase):
+    """Same scene, same scripted grasp and lift; only the fork's friction differs (spec §4 b)."""
+
+    def test_low_friction_slips_more_than_high_friction(self):
+        for seed in range(20):
+            high = lift_slip(2, seed, 1.2)
+            low = lift_slip(2, seed, 0.05)
+            if high is None or low is None:
+                continue
+            high_slip, high_rise = high
+            low_slip, low_rise = low
+            print(f"seed {seed}: slip high={high_slip:.4f} m rise={high_rise:.4f}; slip low={low_slip:.4f} m rise={low_rise:.4f}")
+            self.assertGreater(high_rise, 0.02, "the high-friction grasp must lift the fork")
+            self.assertGreater(low_slip, high_slip + 0.005)
+            return
+        self.fail("no seed in 0-19 reached a lift without staging; investigate the teacher before continuing")
+
+
 if __name__ == "__main__":
     unittest.main()
