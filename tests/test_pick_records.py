@@ -50,6 +50,37 @@ class LedgerTests(unittest.TestCase):
             ledger.next_attempt(self.key)
         self.assertEqual(ledger.scored(self.key)["attempt"], 1)
 
+    def test_record_itself_refuses_a_second_valid_result(self):
+        """next_attempt() is a preflight check; the write must enforce the rule too."""
+        ledger = AttemptLedger(self.run_dir)
+        ledger.record(self.key, 1, valid=True, label="NO_LIFT", filename="x")
+        with self.assertRaises(AlreadyScored):
+            ledger.record(self.key, 2, valid=True, label=None, filename="y")
+        self.assertEqual(len(ledger.attempts(self.key)), 1)
+
+    def test_record_itself_refuses_an_invalid_attempt_after_a_scored_one(self):
+        ledger = AttemptLedger(self.run_dir)
+        ledger.record(self.key, 1, valid=True, label=None, filename="x")
+        with self.assertRaises(AlreadyScored):
+            ledger.record(self.key, 2, valid=False, label="SIM_ERROR", filename="y")
+        self.assertEqual(ledger.invalid_counts(), {})
+
+    def test_record_refuses_a_second_valid_result_after_reload(self):
+        ledger = AttemptLedger(self.run_dir)
+        ledger.record(self.key, 1, valid=True, label="NO_LIFT", filename="x")
+        again = AttemptLedger(self.run_dir)
+        with self.assertRaises(AlreadyScored):
+            again.record(self.key, 2, valid=True, label=None, filename="y")
+        self.assertEqual(len(AttemptLedger(self.run_dir).attempts(self.key)), 1)
+
+    def test_record_still_accepts_a_diagnosed_retry_of_an_invalid_attempt(self):
+        """The scored-episode guard must not block an honest retry after a simulator failure."""
+        ledger = AttemptLedger(self.run_dir)
+        ledger.record(self.key, 1, valid=False, label="SIM_ERROR", filename="x")
+        ledger.add_diagnosis(self.key, 1, "EGL context lost; restarted renderer")
+        ledger.record(self.key, 2, valid=True, label="NO_LIFT", filename="y")
+        self.assertEqual(ledger.scored(self.key)["attempt"], 2)
+
     def test_one_diagnosed_retry_then_block(self):
         ledger = AttemptLedger(self.run_dir)
         ledger.record(self.key, 1, valid=False, label="SIM_ERROR", filename="episode_3100007_F-B_a1.json")

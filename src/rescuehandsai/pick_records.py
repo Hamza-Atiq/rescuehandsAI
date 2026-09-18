@@ -100,6 +100,11 @@ class AttemptLedger:
         self._append({"type": "diagnosis", "key": key, "attempt": attempt, "text": text})
 
     def record(self, key: str, attempt: int, *, valid: bool, label: str | None, filename: str):
+        # next_attempt() refuses to hand out a number once an episode is scored, but it is only a
+        # preflight check: the write enforces the rule as well, so no caller can score an episode
+        # twice by choosing its own attempt number. A retry after an *invalid* attempt is fine.
+        if any(a["valid"] for a in self.attempts(key)):
+            raise AlreadyScored(f"{key} already has a valid result; it is never re-scored or replaced")
         expected = len(self.attempts(key)) + 1
         if attempt != expected:
             raise ValueError(f"{key}: expected attempt {expected}, got {attempt}")
