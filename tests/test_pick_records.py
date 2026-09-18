@@ -73,6 +73,43 @@ class LedgerTests(unittest.TestCase):
             again.record(self.key, 2, valid=True, label=None, filename="y")
         self.assertEqual(len(AttemptLedger(self.run_dir).attempts(self.key)), 1)
 
+    def test_record_itself_refuses_an_undiagnosed_retry(self):
+        ledger = AttemptLedger(self.run_dir)
+        ledger.record(self.key, 1, valid=False, label="SIM_ERROR", filename="x")
+        with self.assertRaises(RetryNeedsDiagnosis):
+            ledger.record(self.key, 2, valid=False, label="SIM_ERROR", filename="y")
+        self.assertEqual(len(ledger.attempts(self.key)), 1)
+
+    def test_record_refuses_an_undiagnosed_retry_after_reload(self):
+        ledger = AttemptLedger(self.run_dir)
+        ledger.record(self.key, 1, valid=False, label="SIM_ERROR", filename="x")
+        again = AttemptLedger(self.run_dir)
+        with self.assertRaises(RetryNeedsDiagnosis):
+            again.record(self.key, 2, valid=True, label="NO_LIFT", filename="y")
+        self.assertEqual(len(AttemptLedger(self.run_dir).attempts(self.key)), 1)
+
+    def test_record_itself_refuses_an_attempt_after_blocking(self):
+        """Two invalid attempts block the episode; the write must not add a third."""
+        ledger = AttemptLedger(self.run_dir)
+        ledger.record(self.key, 1, valid=False, label="SIM_ERROR", filename="x")
+        ledger.add_diagnosis(self.key, 1, "EGL context lost; restarted renderer")
+        ledger.record(self.key, 2, valid=False, label="SIM_ERROR", filename="y")
+        ledger.add_diagnosis(self.key, 2, "same failure again")
+        with self.assertRaises(EvaluationBlocked):
+            ledger.record(self.key, 3, valid=True, label="NO_LIFT", filename="z")
+        self.assertEqual(ledger.blocked_keys(), [self.key])
+        self.assertIsNone(ledger.scored(self.key))
+
+    def test_record_refuses_an_attempt_after_blocking_after_reload(self):
+        ledger = AttemptLedger(self.run_dir)
+        ledger.record(self.key, 1, valid=False, label="SIM_ERROR", filename="x")
+        ledger.add_diagnosis(self.key, 1, "EGL context lost; restarted renderer")
+        ledger.record(self.key, 2, valid=False, label="SIM_ERROR", filename="y")
+        again = AttemptLedger(self.run_dir)
+        with self.assertRaises(EvaluationBlocked):
+            again.record(self.key, 3, valid=False, label="SIM_ERROR", filename="z")
+        self.assertIsNone(AttemptLedger(self.run_dir).scored(self.key))
+
     def test_record_still_accepts_a_diagnosed_retry_of_an_invalid_attempt(self):
         """The scored-episode guard must not block an honest retry after a simulator failure."""
         ledger = AttemptLedger(self.run_dir)

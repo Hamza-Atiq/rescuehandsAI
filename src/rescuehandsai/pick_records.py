@@ -79,10 +79,14 @@ class AttemptLedger:
     def _diagnosed(self, key: str) -> set:
         return {line["attempt"] for line in self.lines if line["type"] == "diagnosis" and line["key"] == key}
 
-    def next_attempt(self, key: str) -> int:
+    def _eligible_attempt(self, key: str) -> int:
+        """The only place the eligibility rules live: an episode is never re-scored, a retry needs
+        its diagnosis first, and two invalid attempts block the episode. Returns the attempt number
+        that may be used next. Both next_attempt() (preflight) and record() (the write) call it, so
+        a caller cannot slip past the rules by choosing its own attempt number."""
         attempts = self.attempts(key)
         if any(a["valid"] for a in attempts):
-            raise AlreadyScored(f"{key} already has a valid result")
+            raise AlreadyScored(f"{key} already has a valid result; it is never re-scored or replaced")
         invalid = [a for a in attempts if not a["valid"]]
         if len(invalid) >= 2:
             labels = ", ".join(a["label"] for a in invalid)
@@ -92,6 +96,9 @@ class AttemptLedger:
                                       f"({invalid[-1]['label']}); write its diagnosis first")
         return len(attempts) + 1
 
+    def next_attempt(self, key: str) -> int:
+        return self._eligible_attempt(key)
+
     def add_diagnosis(self, key: str, attempt: int, text: str):
         if not text.strip():
             raise ValueError("a diagnosis must say what went wrong")
@@ -100,12 +107,10 @@ class AttemptLedger:
         self._append({"type": "diagnosis", "key": key, "attempt": attempt, "text": text})
 
     def record(self, key: str, attempt: int, *, valid: bool, label: str | None, filename: str):
-        # next_attempt() refuses to hand out a number once an episode is scored, but it is only a
-        # preflight check: the write enforces the rule as well, so no caller can score an episode
-        # twice by choosing its own attempt number. A retry after an *invalid* attempt is fine.
-        if any(a["valid"] for a in self.attempts(key)):
-            raise AlreadyScored(f"{key} already has a valid result; it is never re-scored or replaced")
-        expected = len(self.attempts(key)) + 1
+        # next_attempt() is only a preflight check, so the write applies the same eligibility rules:
+        # the episode record file is already on disk either way, and refusing the ledger line forces
+        # the diagnosis (or the block) to be dealt with instead of quietly counting the attempt.
+        expected = self._eligible_attempt(key)
         if attempt != expected:
             raise ValueError(f"{key}: expected attempt {expected}, got {attempt}")
         if not valid and label not in INVALID_LABELS:
