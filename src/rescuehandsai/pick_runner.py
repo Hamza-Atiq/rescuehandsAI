@@ -7,6 +7,7 @@ import time
 
 import mujoco
 
+from .control import validate_action
 from .pick_cells import PickTask, cell_params
 from .pick_config import derive_steps, load_contacts, load_rules
 from .pick_contacts import ContactClassifier
@@ -105,6 +106,12 @@ class PickEpisodeRunner:
                 record["timing"]["inference_s"].append(time.perf_counter() - t0)
             try:
                 action, clamped = clamp_action(raw, sim.previous, sim.limits, sim.config["max_command_delta"])
+                # clamp_action only fixes target values; it passes the policy's timestamp through.
+                # sim.step checks the whole command again, so run that same check here: a malformed
+                # or stale timestamp is the policy's fault (valid INVALID_ACTION), not a harness crash.
+                validate_action(action, sim.names, sim.limits, sim.previous,
+                                now=float(sim.data.time), max_age=sim.config["max_action_age"],
+                                max_delta=sim.config["max_command_delta"])
             except (ValueError, AttributeError, TypeError) as exc:
                 judge.record_error("INVALID_ACTION", counters["physics"], counters["control"], str(exc))
                 stop = "early_stop"

@@ -43,6 +43,28 @@ class NaNAction(HoldHome):
         return BimanualAction(obs.timestamp, targets)
 
 
+class BadTimestamp(HoldHome):
+    """Well-formed targets, unusable timestamp: clamp_action passes the timestamp through."""
+
+    def __init__(self, kind):
+        super().__init__()
+        self.kind = kind
+
+    def act(self, obs):
+        stamp = obs.timestamp - 100.0 if self.kind == "stale" else float("nan")
+        return BimanualAction(stamp, dict(self.sim.home_targets))
+
+
+class RaisingReset(HoldHome):
+    def reset(self, sim, task):
+        raise RuntimeError("checkpoint not loaded")
+
+
+class RaisingWantsImages(HoldHome):
+    def wants_images(self):
+        raise AttributeError("no image config")
+
+
 class BadQacc(HoldHome):
     def act(self, obs):
         self.sim.data.warning[int(mujoco.mjtWarning.mjWARN_BADQACC)].number += 1
@@ -107,6 +129,24 @@ class PickRunnerTests(unittest.TestCase):
     def test_non_finite_action_is_invalid_action(self):
         record = self.run_policy(NaNAction())
         self.assertEqual(record["outcome"]["first_failure"], "INVALID_ACTION")
+
+    def test_non_finite_timestamp_is_invalid_action(self):
+        record = self.run_policy(BadTimestamp("nan"))
+        self.assertEqual(record["outcome"]["first_failure"], "INVALID_ACTION")
+        self.assertEqual(record["outcome"]["stop"], "early_stop")
+
+    def test_stale_timestamp_is_invalid_action(self):
+        record = self.run_policy(BadTimestamp("stale"))
+        self.assertEqual(record["outcome"]["first_failure"], "INVALID_ACTION")
+
+    def test_policy_reset_exception_is_a_valid_policy_error(self):
+        record = self.run_policy(RaisingReset())
+        self.assertEqual(record["outcome"]["first_failure"], "POLICY_ERROR")
+        self.assertEqual(record["control_steps"], 0)
+
+    def test_policy_wants_images_exception_is_a_valid_policy_error(self):
+        record = self.run_policy(RaisingWantsImages())
+        self.assertEqual(record["outcome"]["first_failure"], "POLICY_ERROR")
 
     def test_renderer_failure_is_sim_error_even_during_a_policy_call(self):
         def broken(*args, **kwargs):
