@@ -163,8 +163,11 @@ def main():
     policy = make_policy(args, sim)
     source = source_state()
     if source["dirty"]:  # keep the actual uncommitted change, not only its hash
+        # the diff is read as UTF-8, so write it as UTF-8: the Windows default (cp1252) cannot
+        # encode characters like the arrow in the audit notes and would abort the whole run
         (out / "source.patch").write_text(subprocess.run(["git", "-C", str(ROOT), "diff", "HEAD"],
-                                                         capture_output=True, text=True, encoding="utf-8", errors="replace").stdout)
+                                                         capture_output=True, text=True, encoding="utf-8", errors="replace").stdout,
+                                          encoding="utf-8")
     manifest = {"run": name, "created_utc": stamp, "source": source,
                 "scene_config": sim.scene_config, "asset_path": str(sim.asset_path),
                 "asset_sha256": hashlib.sha256(Path(sim.asset_path).read_bytes()).hexdigest(),
