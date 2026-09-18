@@ -1,0 +1,38 @@
+{
+  "seed": 4,
+  "policy": {
+    "name": "scripted_teacher",
+    "backend": "python",
+    "device": "cpu",
+    "checkpoint": null,
+    "privileged_state": true,
+    "note": "IK teacher; baseline and demonstration source only"
+  },
+  "instruction": "Hand the spoon over to the left arm, then place the cup next to the plate.",
+  "supervisor": true,
+  "fault": null,
+  "state": "SUCCEEDED",
+  "steps": 533,
+  "events": [],
+  "recoveries": 0,
+  "clamped_joint_steps": 0,
+  "inference_calls": 0,
+  "inference_seconds": [],
+  "fault_step": null,
+  "max_steps": 1500,
+  "max_recoveries": 2,
+  "outcome": {
+    "success": true,
+    "cup_in_zone": true,
+    "utensil_in_zone": true,
+    "handoff": true,
+    "released": true,
+    "supported": true,
+    "cup_upright": true,
+    "settled": true,
+    "spare_utensil_in_place": true
+  },
+  "failure": null,
+  "sim_seconds": 26.649999999998983,
+  "wall_seconds": 8.42
+}
