@@ -5,7 +5,7 @@ import numpy as np
 
 from rescuehandsai.expert import GRASP_DEPTH, OPEN, RIGHT_SIGN, TABLE_CLEARANCE, UTENSIL_MARGIN, ScriptedExpert
 from rescuehandsai.pick_cells import cell_params, make_pick_task
-from rescuehandsai.pick_clearance import Clearance, ClearanceChecker
+from rescuehandsai.pick_clearance import MAX_DIP_BOUND_M, Clearance, ClearanceChecker
 from rescuehandsai.scene import sample_params
 from rescuehandsai.sim import MujocoSimulation
 from rescuehandsai.task import TaskSpec
@@ -90,15 +90,57 @@ class ClearanceCheckerTests(unittest.TestCase):
             checked += 1
         self.assertGreater(checked, 0)
 
-    def test_path_sampling_is_dense_enough_and_reports_its_spacing(self):
+    def test_path_sampling_matches_the_dip_bound_formula_and_reports_its_spacing(self):
+        start = dict(self.sim.previous)
+        goal = start | self.old_reach_pose()
+        names = sorted(set(start) | set(goal))
+        a = np.array([start.get(n, goal.get(n)) for n in names])
+        b = np.array([goal.get(n, start.get(n)) for n in names])
+        weighted_range = sum(abs(b[i] - a[i]) * self.checker._radius[n] for i, n in enumerate(names))
+        expected = max(2, int(np.ceil(weighted_range / (2 * MAX_DIP_BOUND_M))) + 1)
+        c = self.checker.along(self.sim.data.qpos, start, goal)
+        self.assertEqual(c.samples, expected)
+        # The hand really did move between neighbouring checked poses.
+        self.assertGreater(c.max_point_step_m, 0.0)
+
+    def test_dip_bound_is_within_the_target_on_the_old_reach_path(self):
         start = dict(self.sim.previous)
         goal = start | self.old_reach_pose()
         c = self.checker.along(self.sim.data.qpos, start, goal)
-        biggest = max(abs(goal[n] - start[n]) for n in goal)
-        self.assertGreaterEqual(c.samples, int(np.ceil(biggest / 0.005)) + 1)
-        # No hand point jumps more than 1 mm between neighbouring checked poses.
-        self.assertGreater(c.max_point_step_m, 0.0)
-        self.assertLessEqual(c.max_point_step_m, 0.001)
+        self.assertGreater(c.dip_bound_m, 0.0)
+        self.assertLessEqual(c.dip_bound_m, MAX_DIP_BOUND_M)
+
+    def test_along_is_a_proven_lower_bound_checked_against_a_finer_resample(self):
+        # along()'s reported z must never be ABOVE the true minimum along the path: verify
+        # by brute-force resampling the same path 10x denser with the exact lowest().
+        start = dict(self.sim.previous)
+        goal = start | self.old_reach_pose()
+        c = self.checker.along(self.sim.data.qpos, start, goal)
+        names = sorted(set(start) | set(goal))
+        a = np.array([start.get(n, goal.get(n)) for n in names])
+        b = np.array([goal.get(n, start.get(n)) for n in names])
+        fine_n = c.samples * 10
+        fine_min = min(self.checker.lowest(self.sim.data.qpos, dict(zip(names, a + (b - a) * f))).z
+                       for f in np.linspace(0.0, 1.0, fine_n))
+        self.assertGreaterEqual(fine_min, c.z)
+
+    def test_joint_radius_bound_is_never_smaller_than_the_actual_distance_from_its_axis(self):
+        # right_arm/gripper only moves the moving-jaw body; check R_j against the real
+        # perpendicular distance of that body's checked points from the joint's world axis.
+        name = "right_arm/gripper"
+        j = self.sim.model.joint(name).id
+        pose = dict(self.sim.previous) | self.old_reach_pose()
+        self.checker.lowest(self.sim.data.qpos, pose)   # poses the checker's private data
+        d = self.checker._data
+        anchor, axis = d.xanchor[j].copy(), d.xaxis[j].copy()
+        body_j = self.sim.model.jnt_bodyid[j]
+        moved = [g for g in self.checker._geoms if self.sim.model.geom_bodyid[g] == body_j]
+        self.assertTrue(moved)
+        points = np.concatenate([self.checker._points[g] @ d.geom_xmat[g].reshape(3, 3).T + d.geom_xpos[g]
+                                 for g in moved])
+        rel = points - anchor
+        distance = np.linalg.norm(rel - np.outer(rel @ axis, axis), axis=1)
+        self.assertGreaterEqual(self.checker._radius[name], float(distance.max()))
 
     def test_shapes_are_found_by_collision_settings_not_a_fixed_list(self):
         m = self.sim.model

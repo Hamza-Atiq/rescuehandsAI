@@ -22,8 +22,10 @@ from .pick_clearance import ClearanceChecker
 
 MIN_TABLE_CLEARANCE_M = 0.001
 GRASP_HEIGHT_STEP_M = 0.0005
-# Above ~9 mm the sweep kept under ~70 % of the handle between the pads (FINDINGS §4).
-MAX_GRASP_CENTER_Z_M = 0.010
+# Owner-approved experiment (22 Sep): allowed up to 12 mm. Higher grasps cover less of
+# the handle -- the kinematic sweep kept ~70 % at 9 mm (FINDINGS §4) -- and may slip;
+# measured in Task 3.
+MAX_GRASP_CENTER_Z_M = 0.012
 LIFT_REQUEST_M = 0.05
 GRASP_PITCHES = (1.3, 1.4, 1.2, 1.0)
 
@@ -51,8 +53,14 @@ class PickExpert(ScriptedExpert):
     def _plan_grasp(self, item, g):
         """Lowest grasp height whose whole commanded path keeps the hand 1 mm above the table.
 
-        Returns (q, q_lift, q_pre, plan) or None when no height is reachable at all
-        (the staging case). Raises NoClearGraspError when heights are reachable but none clears.
+        Checks the reach, close (jaw closing), lift, and both regrasp-retry legs that
+        `_pick_utensil` actually commands after a missed lift, plus the initial approach.
+        Legs are checked cheapest/most-likely-to-fail first (reach, close, lift,
+        regrasp_open, regrasp_back_off, approach) and a height is abandoned at the first
+        leg below the margin, so most rejected heights only pay for one or two of the six
+        clearance checks. Returns (q, q_lift, q_pre, plan) or None when no height is
+        reachable at all (the staging case). Raises NoClearGraspError when heights are
+        reachable but none clears.
         """
         arm, grip = "right_arm", "right_arm/gripper"
         pos, axis = self._utensil_frame(item)
@@ -77,22 +85,36 @@ class PickExpert(ScriptedExpert):
             at = pre | q
             closed = at | {grip: CLOSE}
             lifted = closed | q_lift
-            legs = {name: self.clearance.along(qpos, a, b)
-                    for name, (a, b) in {"approach": (now, pre), "reach": (pre, at),
-                                         "close": (at, closed), "lift": (closed, lifted)}.items()}
-            low = min(c.z for c in legs.values())
-            tried.append([round(float(z), 5), round(low, 5)])
-            if low >= MIN_TABLE_CLEARANCE_M:
-                plan = {"center_z_m": float(z), "pitch": float(pitch),
-                        "reach_site_z_m": self.clearance.site_z(qpos, at),
-                        "lift_request_z_m": float(site[2] + LIFT_REQUEST_M),
-                        "lift_site_z_m": self.clearance.site_z(qpos, lifted),
-                        "min_clearance_m": low,
-                        "legs": {k: {"z_m": c.z, "shape": c.shape, "fraction": c.fraction, "samples": c.samples,
-                                     "max_point_step_m": c.max_point_step_m} for k, c in legs.items()},
-                        "tried": tried}
-                self.grasp_plans.append(plan)
-                return q, q_lift, q_pre, plan
+            # The two moves `_pick_utensil` commands after a missed lift: open the jaw in
+            # place, then back off to q_pre with the jaw still open.
+            opened = lifted | {grip: OPEN}
+            backed = opened | q_pre
+            legs_order = (("reach", pre, at), ("close", at, closed), ("lift", closed, lifted),
+                          ("regrasp_open", lifted, opened), ("regrasp_back_off", opened, backed),
+                          ("approach", now, pre))
+            legs, low, failed_leg = {}, None, None
+            for name, a, b in legs_order:
+                c = self.clearance.along(qpos, a, b)
+                legs[name] = c
+                if low is None or c.z < low:
+                    low = c.z
+                if c.z < MIN_TABLE_CLEARANCE_M:
+                    failed_leg = name
+                    break
+            if failed_leg is not None:
+                tried.append([round(float(z), 5), round(low, 5), failed_leg])
+                continue
+            plan = {"center_z_m": float(z), "pitch": float(pitch),
+                    "reach_site_z_m": self.clearance.site_z(qpos, at),
+                    "lift_request_z_m": float(site[2] + LIFT_REQUEST_M),
+                    "lift_site_z_m": self.clearance.site_z(qpos, lifted),
+                    "min_clearance_m": low,
+                    "legs": {k: {"z_m": c.z, "shape": c.shape, "fraction": c.fraction, "samples": c.samples,
+                                 "max_point_step_m": c.max_point_step_m, "dip_bound_m": c.dip_bound_m}
+                             for k, c in legs.items()},
+                    "tried": tried}
+            self.grasp_plans.append(plan)
+            return q, q_lift, q_pre, plan
         if reachable:
             raise NoClearGraspError(
                 f"TARGET_MISSED: no grasp height up to {MAX_GRASP_CENTER_Z_M} m keeps the right hand "

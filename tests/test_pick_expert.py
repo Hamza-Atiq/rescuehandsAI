@@ -37,10 +37,26 @@ def right_arm_unreachable(expert):
     expert._grasp_with_clearance = patched
 
 
-def first_labels(expert, limit=6):
+def first_labels(expert, limit=6, stop_at=None):
+    """Collect up to `limit` move labels.
+
+    With `stop_at` given: stop as soon as that label is collected (so a test double's own
+    PlanningError raised right after yielding it is never even reached), but still
+    propagate a PlanningError raised BEFORE `stop_at` is seen (so tests that expect a
+    specific failure, without a `stop_at`, keep seeing it -- the default `stop_at=None`
+    reproduces the old always-raise behaviour exactly).
+    """
     labels = []
     for _ in range(limit):
-        labels.append(next(expert._plan).label)
+        try:
+            move = next(expert._plan)
+        except PlanningError:
+            if stop_at is not None and stop_at in labels:
+                break
+            raise
+        labels.append(move.label)
+        if stop_at is not None and move.label == stop_at:
+            break
     return labels
 
 
@@ -62,8 +78,10 @@ class PickExpertPlanningTests(unittest.TestCase):
                     first_labels(expert, 3)          # the grasp is planned before utensil_approach is yielded
                     plan = expert.grasp_plans[-1]
                     self.assertGreaterEqual(plan["min_clearance_m"], MIN_TABLE_CLEARANCE_M)
-                    for leg in ("approach", "reach", "close", "lift"):
-                        self.assertGreaterEqual(plan["legs"][leg]["z_m"], MIN_TABLE_CLEARANCE_M, leg)
+                    self.assertEqual(set(plan["legs"]),
+                                     {"approach", "reach", "close", "lift", "regrasp_open", "regrasp_back_off"})
+                    for leg, detail in plan["legs"].items():
+                        self.assertGreaterEqual(detail["z_m"], MIN_TABLE_CLEARANCE_M, leg)
                     self.assertGreater(plan["center_z_m"], 0.0015)   # higher than the old 1.5 mm
 
     def test_clearance_is_rechecked_independently_on_the_solved_reach_pose(self):
@@ -103,7 +121,9 @@ class PickExpertPlanningTests(unittest.TestCase):
             yield Move({}, 1, "stage_spy")
             raise PlanningError("spy stops here")
         expert._stage_utensil = spy
-        self.assertIn("stage_spy", first_labels(expert, 3))
+        # settle, an optional home_start, then stage_spy: allow room for either case and
+        # stop as soon as stage_spy is reached (never even resuming the spy past its yield).
+        self.assertIn("stage_spy", first_labels(expert, 5, stop_at="stage_spy"))
 
 
 class PickTeacherUsesPickExpertTests(unittest.TestCase):
