@@ -82,6 +82,11 @@ class PickExpertPlanningTests(unittest.TestCase):
                                      {"approach", "reach", "close", "lift", "regrasp_open", "regrasp_back_off"})
                     for leg, detail in plan["legs"].items():
                         self.assertGreaterEqual(detail["z_m"], MIN_TABLE_CLEARANCE_M, leg)
+                        # Same proven spacing guarantee as ClearanceChecker.along() itself
+                        # (test_pick_clearance.py): measured chord <= path length <=
+                        # 2*dip_bound <= 0.5 mm, well inside the 1 mm target.
+                        self.assertLessEqual(detail["max_point_step_m"], 2 * detail["dip_bound_m"] + 1e-12, leg)
+                        self.assertLessEqual(detail["max_point_step_m"], 0.001, leg)
                     self.assertGreater(plan["center_z_m"], 0.0015)   # higher than the old 1.5 mm
 
     def test_clearance_is_rechecked_independently_on_the_solved_reach_pose(self):
