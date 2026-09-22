@@ -36,7 +36,7 @@ class PhysicsVersionPlumbingTests(unittest.TestCase):
     def test_unknown_version_is_rejected(self):
         config = load_config()
         with self.assertRaises(ValueError):
-            world_xml(sample_params(config, 0), config, physics_version=3)
+            world_xml(sample_params(config, 0), config, physics_version=4)
         with self.assertRaises(ValueError):
             MujocoSimulation(physics_version=0)
 

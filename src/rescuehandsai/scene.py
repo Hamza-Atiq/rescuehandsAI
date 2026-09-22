@@ -21,7 +21,13 @@ SCENE_ITEMS = ("cup",) + UTENSILS
 # utensil's sampled friction never matters. Version 2 gives utensil shapes priority 2,
 # so their sampled sliding friction governs jaw and table contacts; condim and the
 # torsional/rolling values copy what the gripper already imposed on jaw contacts.
-PHYSICS_VERSIONS = (1, 2)
+# Physics version 3 (experimental, 22 Sep 2026) = version 2 plus MuJoCo's NoSlip post-solver.
+# The grip probe (docs/research/2026-09-22-grip-probe/FINDINGS.md) measured the utensil creeping
+# ~1.2 mm/s out of a 40-60 N squeeze under version 2: MuJoCo's documented "slow slippage" of
+# soft-contact friction. MuJoCo's docs advise 1-3 NoSlip iterations; they cost time and can
+# occasionally destabilise multi-contact scenes, so version 3 is measured before any adoption.
+PHYSICS_VERSIONS = (1, 2, 3)
+NOSLIP_ITERATIONS_V3 = 3
 
 
 def check_physics_version(physics_version: int) -> int:
@@ -187,9 +193,10 @@ def world_xml(params: SceneParams, config: dict, showcase: bool = False, physics
         asset, extras = _showcase_xml()
         cameras += extras
         off_w, off_h = 1920, 1080
+    noslip = f' noslip_iterations="{NOSLIP_ITERATIONS_V3}"' if physics_version == 3 else ""
     return f"""<mujoco model="rescuehands_dinner_table">
   <compiler angle="radian"/>{asset}
-  <option integrator="implicitfast" timestep="0.005" cone="elliptic" impratio="10" iterations="10" ls_iterations="20"/>
+  <option integrator="implicitfast" timestep="0.005" cone="elliptic" impratio="10" iterations="10" ls_iterations="20"{noslip}/>
   <visual>
     <global offwidth="{off_w}" offheight="{off_h}"/>
     <headlight ambient="0.25 0.25 0.25" diffuse="0.2 0.2 0.2" specular="0 0 0"/>
