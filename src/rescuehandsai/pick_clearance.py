@@ -77,12 +77,33 @@ class ClearanceChecker:
             d.qpos[self.model.jnt_qposadr[self.model.joint(name).id]] = value
         mujoco.mj_kinematics(self.model, d)
 
+    def _shape_lowest_z(self, g) -> float:
+        """Exact lowest world z of collision geom `g` at the checker's current internal pose.
+
+        Spheres and capsules are round: sampling a handful of surface points (as the box
+        and mesh shapes do, exactly, since a linear functional's minimum over a polytope
+        is always at a vertex) sits up to a fraction of a millimetre ABOVE the true lowest
+        point once the shape is rotated. Spheres and capsules use the closed-form minimum
+        instead; boxes and meshes stay vertex-based (exact for those convex/flat shapes).
+        """
+        d = self._data
+        t = self.model.geom_type[g]
+        if t == mujoco.mjtGeom.mjGEOM_SPHERE:
+            r = float(self.model.geom_size[g][0])
+            return float(d.geom_xpos[g][2] - r)
+        if t == mujoco.mjtGeom.mjGEOM_CAPSULE:
+            r, h = float(self.model.geom_size[g][0]), float(self.model.geom_size[g][1])
+            R = d.geom_xmat[g].reshape(3, 3)
+            c = d.geom_xpos[g]
+            return float(min(c[2] + h * R[2, 2], c[2] - h * R[2, 2]) - r)
+        R = d.geom_xmat[g].reshape(3, 3)
+        return float((self._points[g] @ R.T + d.geom_xpos[g])[:, 2].min())
+
     def lowest(self, qpos, targets: dict) -> Clearance:
         self._pose(qpos, targets)
         best_z, best_g = np.inf, None
         for g in self._geoms:
-            R = self._data.geom_xmat[g].reshape(3, 3)
-            z = float((self._points[g] @ R.T + self._data.geom_xpos[g])[:, 2].min())
+            z = self._shape_lowest_z(g)
             if z < best_z:
                 best_z, best_g = z, g
         return Clearance(best_z, self.model.geom(best_g).name or f"geom_{best_g}", 1.0)
@@ -92,7 +113,11 @@ class ClearanceChecker:
 
         Starts with at most MAX_JOINT_STEP_RAD of joint change between checked poses, then
         adds poses until no hand shape point moves more than `max_point_step` between
-        neighbours, so a contact between two checked poses cannot hide in a big gap.
+        neighbours. The reported `z` is a conservative bound, not the sampled minimum: it
+        is the lowest *sampled* clearance minus half the achieved spacing
+        (`max_point_step_m / 2`), because a hand point moving at most `max_point_step_m`
+        between two checked poses can dip at most about half that distance below whichever
+        sampled end is lower.
         """
         if max_point_step <= 0:
             raise ValueError("max_point_step must be positive")
@@ -101,6 +126,8 @@ class ClearanceChecker:
         b = np.array([goal.get(n, start.get(n)) for n in names], dtype=float)
         samples = max(2, int(np.ceil(float(np.max(np.abs(b - a), initial=0.0)) / MAX_JOINT_STEP_RAD)) + 1)
         while True:
+            if samples > 100_000:
+                raise RuntimeError(f"path sampling did not reach {max_point_step} m spacing")
             worst, previous, step = None, None, 0.0
             for f in np.linspace(0.0, 1.0, samples):
                 c = self.lowest(qpos, dict(zip(names, a + (b - a) * f)))
@@ -111,9 +138,7 @@ class ClearanceChecker:
                 if worst is None or c.z < worst[0]:
                     worst = (c.z, c.shape, float(f))
             if step <= max_point_step:
-                return Clearance(worst[0], worst[1], worst[2], samples, step)
-            if samples > 100_000:
-                raise RuntimeError(f"path sampling did not reach {max_point_step} m spacing")
+                return Clearance(worst[0] - step / 2, worst[1], worst[2], samples, step)
             samples = (samples - 1) * 2 + 1
 
     def site_z(self, qpos, targets: dict) -> float:

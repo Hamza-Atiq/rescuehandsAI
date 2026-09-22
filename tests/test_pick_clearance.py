@@ -1,5 +1,6 @@
 import unittest
 
+import mujoco
 import numpy as np
 
 from rescuehandsai.expert import GRASP_DEPTH, OPEN, RIGHT_SIGN, TABLE_CLEARANCE, UTENSIL_MARGIN, ScriptedExpert
@@ -64,6 +65,30 @@ class ClearanceCheckerTests(unittest.TestCase):
         c = self.checker.lowest(self.sim.data.qpos, dict(self.sim.previous) | self.old_reach_pose())
         self.assertLess(c.z, -0.003)
         self.assertEqual(c.shape, "geom_93")
+
+    def test_sphere_and_capsule_shapes_report_their_exact_lowest_point(self):
+        # The old reach pose rotates the hand enough that sampling a handful of surface
+        # points on round shapes sits above the true lowest point; check every sphere and
+        # capsule collision shape against the closed-form minimum instead.
+        targets = dict(self.sim.previous) | self.old_reach_pose()
+        self.checker.lowest(self.sim.data.qpos, targets)
+        m, d = self.sim.model, self.checker._data
+        checked = 0
+        for g in self.checker._geoms:
+            t = m.geom_type[g]
+            if t == mujoco.mjtGeom.mjGEOM_SPHERE:
+                r = float(m.geom_size[g][0])
+                expected = float(d.geom_xpos[g][2] - r)
+            elif t == mujoco.mjtGeom.mjGEOM_CAPSULE:
+                r, h = float(m.geom_size[g][0]), float(m.geom_size[g][1])
+                R = d.geom_xmat[g].reshape(3, 3)
+                c = d.geom_xpos[g]
+                expected = float(min(c[2] + h * R[2, 2], c[2] - h * R[2, 2]) - r)
+            else:
+                continue
+            self.assertAlmostEqual(self.checker._shape_lowest_z(g), expected, delta=1e-9)
+            checked += 1
+        self.assertGreater(checked, 0)
 
     def test_path_sampling_is_dense_enough_and_reports_its_spacing(self):
         start = dict(self.sim.previous)
