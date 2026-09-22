@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from rescuehandsai.expert import GRASP_DEPTH, RIGHT_SIGN, TABLE_CLEARANCE, UTENSIL_MARGIN, ScriptedExpert
+from rescuehandsai.expert import GRASP_DEPTH, OPEN, RIGHT_SIGN, TABLE_CLEARANCE, UTENSIL_MARGIN, ScriptedExpert
 from rescuehandsai.pick_cells import cell_params, make_pick_task
 from rescuehandsai.pick_clearance import Clearance, ClearanceChecker
 from rescuehandsai.scene import sample_params
@@ -31,7 +31,12 @@ class ClearanceCheckerTests(unittest.TestCase):
         self.checker = ClearanceChecker(self.sim.model, "right_arm")
 
     def old_reach_pose(self):
-        """The unchanged full-task expert's reach pose (1.5 mm grasp centre)."""
+        """The unchanged full-task expert's reach pose (1.5 mm grasp centre).
+
+        The reach is commanded with the jaw open: the teacher's `utensil_reach` Move
+        carries `q` alone, and the jaw is opened by the preceding `utensil_approach`
+        Move, so the jaw stays at OPEN through the reach rather than its start value.
+        """
         expert = ScriptedExpert(self.sim, TaskSpec(task_id="t", instruction=self.task.instruction,
                                                    utensil=self.task.utensil, seed=3100000),
                                 subtasks=("pick_utensil",))
@@ -42,7 +47,7 @@ class ClearanceCheckerTests(unittest.TestCase):
         q, *_ = expert._grasp_with_clearance("right_arm", center, g["half_width"], 0.05, approach_xy=axis[:2],
                                              pitches=(1.3, 1.4, 1.2, 1.0), margin=UTENSIL_MARGIN,
                                              closing_sign=RIGHT_SIGN)
-        return q
+        return q | {"right_arm/gripper": OPEN}
 
     def test_checks_the_collidable_jaw_meshes_and_pads(self):
         for name in ("geom_93", "geom_104", "right_arm/fixed_jaw_box3", "right_arm/moving_jaw_box2"):
