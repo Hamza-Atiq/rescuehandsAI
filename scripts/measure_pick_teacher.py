@@ -41,6 +41,17 @@ def run_one(sim, seed, cell, physics_version=2):
     # Only the version field differs from configs/pick_rules.json; every rule value is the file's.
     rules = dict(load_rules(), physics_version=physics_version)
     real_step, clock = mujoco.mj_step, {"s": 0.0, "n": 0}
+    # The runner times policy calls only when the policy asks for images; the teacher never does,
+    # so time teacher.act here (it includes the grasp planning).
+    real_act, teacher_clock = teacher.act, {"s": 0.0}
+
+    def timed_act(obs):
+        t = time.perf_counter()
+        try:
+            return real_act(obs)
+        finally:
+            teacher_clock["s"] += time.perf_counter() - t
+    teacher.act = timed_act
 
     def timed_step(m, d):
         t = time.perf_counter()
@@ -107,7 +118,7 @@ def run_one(sim, seed, cell, physics_version=2):
     ep.update(physics_version=physics_version, utensil_contacts=utensil.rows(),
               other_warnings=(record or {}).get("other_warnings", {}),
               timing={"physics_step_s": clock["s"], "physics_steps": clock["n"],
-                      "teacher_s": sum((record or {}).get("timing", {}).get("inference_s", [])),
+                      "teacher_s": teacher_clock["s"],
                       "wall_s": time.perf_counter() - t_wall})
     return ep
 
