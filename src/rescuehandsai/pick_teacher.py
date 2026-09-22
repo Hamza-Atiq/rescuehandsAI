@@ -1,13 +1,13 @@
 """Pick-only teacher: approach the named utensil, grasp, lift, then hold (spec section 7).
 
-It wraps the existing ScriptedExpert with only the `pick_utensil` subtask. The expert's
-script always ends with a home move that would lower the utensil again, so the teacher
-stops feeding the expert as soon as it reaches that phase and repeats the last command
-instead. IK lives inside the teacher only; the deployed policy never uses it.
+It wraps PickExpert with only the `pick_utensil` subtask. The expert's script always
+ends with a home move that would lower the utensil again, so the teacher stops feeding
+the expert as soon as it reaches that phase and repeats the last command instead. IK
+lives inside the expert only; the deployed policy never uses it.
 """
 from .contracts import BimanualAction
-from .expert import ScriptedExpert
 from .pick_cells import PickTask
+from .pick_expert import PickExpert
 from .task import TaskSpec
 
 
@@ -24,7 +24,7 @@ class PickTeacher:
     def reset(self, sim, task: PickTask):
         spec = TaskSpec(task_id=f"pick_{task.seed}_{task.cell}", instruction=task.instruction,
                         utensil=task.utensil, seed=task.seed)
-        self.expert = ScriptedExpert(sim, spec, subtasks=("pick_utensil",))
+        self.expert = PickExpert(sim, spec)
         self.phase = "pick"
         self.finished_pick_at = None
         self._targets = dict(sim.previous)
