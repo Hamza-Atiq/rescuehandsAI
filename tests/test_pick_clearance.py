@@ -18,6 +18,58 @@ def reset_like_runner(sim, seed, cell):
     return task
 
 
+def _perp_distances(points: np.ndarray, anchor: np.ndarray, axis: np.ndarray) -> np.ndarray:
+    """Perpendicular distance from the world-frame line (anchor, axis) to each point."""
+    rel = points - anchor
+    return np.linalg.norm(rel - np.outer(rel @ axis, axis), axis=1)
+
+
+def _is_descendant(model, ancestor_body: int, body: int) -> bool:
+    """Is `ancestor_body` `body` itself or a strict ancestor of it?
+
+    Walks `model.body_parentid` directly. This is deliberately independent of
+    `_ancestor_offset` (the function under test elsewhere in pick_clearance.py): the
+    set of shapes a test checks a joint's radius against must not be selected by the
+    same code whose correctness the test exists to prove, or a false-negative bug in
+    that selection would make production and the test silently agree.
+    """
+    k = body
+    while True:
+        if k == ancestor_body:
+            return True
+        if k == 0:
+            return False
+        k = int(model.body_parentid[k])
+
+
+def _exact_farthest_point_distance(checker, model, data, g: int, anchor: np.ndarray, axis: np.ndarray) -> float:
+    """Exact farthest distance from the world-frame axis line to any point of geom `g`.
+
+    Sphere: distance-to-a-line is a convex function of the point, so a sphere's
+    farthest point from the line is along the centre's own perpendicular to it, offset
+    outward by the radius -- exact, not a sample. Capsule: the same convexity argument
+    applied to its central segment (a convex set): the farthest point of a segment
+    under a convex function is always at one of its two endpoints, each offset by the
+    radius. Box/mesh: `checker._points[g]` already holds the exact corner/vertex set
+    MuJoCo collides against (its convex hull), so the sampled max over those points IS
+    the exact max for these two types -- unlike for sphere/capsule, where that same
+    array is only a handful of axis-pole samples that can under-report the true
+    farthest point for an arbitrary axis.
+    """
+    t, s = model.geom_type[g], model.geom_size[g]
+    R = data.geom_xmat[g].reshape(3, 3)
+    center = data.geom_xpos[g]
+    if t == mujoco.mjtGeom.mjGEOM_SPHERE:
+        r = float(s[0])
+        return float(_perp_distances(center[None, :], anchor, axis)[0]) + r
+    if t == mujoco.mjtGeom.mjGEOM_CAPSULE:
+        r, h = float(s[0]), float(s[1])
+        endpoints = np.array([center + h * R[:, 2], center - h * R[:, 2]])
+        return float(_perp_distances(endpoints, anchor, axis).max()) + r
+    world_points = checker._points[g] @ R.T + center
+    return float(_perp_distances(world_points, anchor, axis).max())
+
+
 class ClearanceCheckerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -134,14 +186,40 @@ class ClearanceCheckerTests(unittest.TestCase):
     def test_joint_radius_bound_is_never_smaller_than_the_actual_distance_from_its_axis(self):
         # Every right-arm hinge joint, not just the gripper: for an upstream joint (e.g.
         # shoulder_pan) the checked shapes it moves are on DESCENDANT bodies, not its own
-        # body, so `_ancestor_offset` must actually walk the chain for this to exercise
-        # anything. Checked at several different poses since the bound must hold at all
-        # of them (it is configuration-independent by construction).
+        # body, so descendant selection must actually walk the chain for this to exercise
+        # anything -- done via `_is_descendant`, which re-walks `body_parentid`
+        # independently of `_ancestor_offset` (the function under test), so a
+        # false-negative bug there could not make this test vacuously agree with
+        # production. Checked at several different poses since the bound must hold at
+        # all of them (it is configuration-independent by construction).
+        #
+        # The "ground truth" distance is the EXACT farthest point of each shape from the
+        # joint's world axis line (`_exact_farthest_point_distance`), not a coarse
+        # sample: the right hand has real sphere/capsule collision geoms (finger tips,
+        # r ~ 0.75-1.1 mm) whose farthest point from an arbitrary axis is generally not
+        # one of `_local_points`'s 6-8 axis-aligned sample points -- close enough to the
+        # 0.25 mm dip bound and the 1 mm clearance margin that a coarse sample could hide
+        # a real unsoundness in `_radius`.
         model = self.sim.model
         joint_ids = [j for j in range(model.njnt)
                      if model.jnt_type[j] == mujoco.mjtJoint.mjJNT_HINGE
                      and model.joint(j).name.startswith("right_arm/")]
         self.assertTrue(joint_ids)
+
+        # Sanity check on the offset math itself, independent of qpos (body_pos is a
+        # static model quantity): every joint upstream of the gripper must have a
+        # genuinely non-zero chain offset to the hand -- i.e. `_ancestor_offset` really
+        # is summing body offsets along the chain, not just returning `True` with an
+        # accidental offset of 0.
+        moving_jaw_body = model.body("right_arm/moving_jaw_so101_v1").id
+        gripper_joint = model.joint("right_arm/gripper").id
+        upstream = [j for j in joint_ids if j != gripper_joint]
+        self.assertTrue(upstream)
+        for j in upstream:
+            is_ancestor, offset = _ancestor_offset(model, int(model.jnt_bodyid[j]), moving_jaw_body)
+            self.assertTrue(is_ancestor, model.joint(j).name)
+            self.assertGreater(offset, 0.0, model.joint(j).name)
+
         poses = [
             dict(self.sim.previous) | self.old_reach_pose(),
             dict(self.sim.home_targets),
@@ -155,15 +233,13 @@ class ClearanceCheckerTests(unittest.TestCase):
                 anchor, axis = d.xanchor[j].copy(), d.xaxis[j].copy()
                 body_j = int(model.jnt_bodyid[j])
                 moved = [g for g in self.checker._geoms
-                         if _ancestor_offset(model, body_j, int(model.geom_bodyid[g]))[0]]
-                if not moved:
-                    self.assertEqual(self.checker._radius[name], 0.0, name)
-                    continue
-                points = np.concatenate([self.checker._points[g] @ d.geom_xmat[g].reshape(3, 3).T + d.geom_xpos[g]
-                                         for g in moved])
-                rel = points - anchor
-                distance = np.linalg.norm(rel - np.outer(rel @ axis, axis), axis=1)
-                self.assertGreaterEqual(self.checker._radius[name], float(distance.max()), name)
+                         if _is_descendant(model, body_j, int(model.geom_bodyid[g]))]
+                # Non-vacuous: every right-arm joint moves at least one checked shape in
+                # this model, so this assertion must never be trivially skipped.
+                self.assertTrue(moved, name)
+                distance = max(_exact_farthest_point_distance(self.checker, model, d, g, anchor, axis)
+                               for g in moved)
+                self.assertGreaterEqual(self.checker._radius[name], distance, name)
 
     def test_shapes_are_found_by_collision_settings_not_a_fixed_list(self):
         m = self.sim.model
