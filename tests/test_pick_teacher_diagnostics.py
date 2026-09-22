@@ -48,5 +48,18 @@ class TableContactTallyTests(unittest.TestCase):
         self.assertEqual(TableContactTally().rows(), [])
 
 
+class UtensilContactTallyTests(unittest.TestCase):
+    def test_peak_count_and_first_label(self):
+        from rescuehandsai.pick_teacher_diagnostics import UtensilContactTally
+        t = UtensilContactTally()
+        t.add("geom_104", 3.0, "utensil_close")
+        t.add("geom_104", 7.5, "hold")
+        t.add("right_arm/moving_jaw_box2", 1.0, "utensil_close")
+        rows = {r["shape"]: r for r in t.rows()}
+        self.assertEqual(rows["geom_104"], {"shape": "geom_104", "samples": 2, "peak_force_n": 7.5,
+                                            "first_label": "utensil_close"})
+        self.assertEqual(rows["right_arm/moving_jaw_box2"]["samples"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()

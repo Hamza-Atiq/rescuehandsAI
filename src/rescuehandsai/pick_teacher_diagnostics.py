@@ -21,6 +21,22 @@ class TableContactTally:
         return [dict(self._rows[k]) for k in sorted(self._rows)]
 
 
+class UtensilContactTally:
+    """Per robot shape touching the named utensil: samples, peak normal force, first move."""
+
+    def __init__(self):
+        self._rows = {}
+
+    def add(self, shape: str, force_n: float, label):
+        row = self._rows.setdefault(shape, {"shape": shape, "samples": 0, "peak_force_n": 0.0,
+                                            "first_label": label})
+        row["samples"] += 1
+        row["peak_force_n"] = max(row["peak_force_n"], float(force_n))
+
+    def rows(self) -> list:
+        return [dict(self._rows[k]) for k in sorted(self._rows)]
+
+
 def lift_chain(plan: dict, samples: list, utensil_start_z: float) -> dict:
     """Split a short lift into its causes.
 
