@@ -7,7 +7,7 @@ import numpy as np
 
 from rescuehandsai.contracts import BimanualAction
 from rescuehandsai.pick_config import PICK_PHYSICS_VERSION, load_contacts
-from rescuehandsai.pick_contacts import (JAW_TABLE, JAW_UTENSIL, SCENE_NORMAL, VIOLATION, ContactClassifier,
+from rescuehandsai.pick_contacts import (JAW_UTENSIL, SCENE_NORMAL, VIOLATION, ContactClassifier,
                                          collides, geom_name)
 from rescuehandsai.sim import MujocoSimulation
 
@@ -110,17 +110,24 @@ class ContactClassifierTests(unittest.TestCase):
         verdict = self.verdict_for(moving, handle)
         self.assertEqual((verdict.kind, verdict.jaw), (JAW_UTENSIL, "moving"))
 
-    def test_grasp_shape_on_table_is_allowed_below_limit_and_judged_above(self):
+    def test_grasp_shape_on_table_is_forbidden(self):
+        # Owner decision 23 Sep: no robot shape may touch the table, grasp pads included.
         pad = self.g("right_arm/fixed_jaw_box5")
         x, y, _ = self.sim.data.geom_xpos[pad]
         move_geom_to(self.sim, pad, (x, y, -0.002))
-        self.assertEqual(self.verdict_for(pad, self.g("table")).kind, JAW_TABLE)
-        strict = dict(self.config, jaw_table_force_limit_n=-1.0)
-        self.clf = ContactClassifier(self.sim.model, "fork", strict)
-        self.assertEqual(self.verdict_for(pad, self.g("table")).labels, ("FORBIDDEN_CONTACT",))
+        verdict = self.verdict_for(pad, self.g("table"))
+        self.assertEqual((verdict.kind, verdict.labels), (VIOLATION, ("FORBIDDEN_CONTACT",)))
+        for name in ("fixed_jaw_box3", "moving_jaw_box2", "moving_jaw_sph_tip1"):
+            for a, b in ((self.g(f"right_arm/{name}"), self.g("table")), (self.g("table"), self.g(f"right_arm/{name}"))):
+                self.assertEqual(self.clf.classify(a, b, 0.0).labels, ("FORBIDDEN_CONTACT",), name)
         severe = dict(self.config, severe_force_limit_n=-1.0)
         self.clf = ContactClassifier(self.sim.model, "fork", severe)
         self.assertIn("EXCESS_FORCE", self.verdict_for(pad, self.g("table")).labels)
+
+    def test_the_removed_jaw_table_limit_is_rejected(self):
+        # An old config must fail loudly, not quietly re-open a table permission.
+        with self.assertRaises(ValueError):
+            ContactClassifier(self.sim.model, "fork", dict(self.config, jaw_table_force_limit_n=None))
 
     # -- forbidden contacts: each one must be detectable ----------------------------
     def test_any_robot_shape_on_the_spare(self):
@@ -198,9 +205,6 @@ class ContactClassifierTests(unittest.TestCase):
                 for a, b in ((mesh, self.g(other)), (self.g(other), mesh)):
                     verdict = self.clf.classify(a, b, 0.0)
                     self.assertEqual((verdict.kind, verdict.labels), (VIOLATION, (label,)), (side, other))
-            # the table permission for pads must not leak to the meshes, even under a force limit
-            limited = ContactClassifier(self.sim.model, "fork", dict(self.config, jaw_table_force_limit_n=1e9))
-            self.assertEqual(limited.classify(mesh, self.g("table"), 0.0).labels, ("FORBIDDEN_CONTACT",))
 
     def test_jaw_mesh_table_contact_is_forbidden_in_a_real_contact(self):
         mesh = self.mesh_geom("right_arm", "fixed")

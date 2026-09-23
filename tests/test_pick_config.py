@@ -23,7 +23,8 @@ class PickConfigTests(unittest.TestCase):
         self.assertFalse(load_rules()["frozen"])
         contacts = load_contacts()
         self.assertFalse(contacts["force_limits_frozen"])
-        self.assertIsNone(contacts["jaw_table_force_limit_n"])
+        self.assertNotIn("jaw_table_force_limit_n", contacts)  # every robot-table contact is forbidden
+        self.assertIsNone(contacts["severe_force_limit_n"])
 
     def test_rules_task_and_start_check_use_one_physics_version(self):
         # Adoption of v3 (23 Sep) must be coherent: a rules file on one version and task or

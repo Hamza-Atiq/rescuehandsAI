@@ -10,16 +10,18 @@ import numpy as np
 
 from .scene import ARMS, UTENSILS
 
-SCENE_NORMAL, JAW_UTENSIL, JAW_TABLE, VIOLATION = "scene_normal", "jaw_utensil", "jaw_table", "violation"
+# Owner decision 23 Sep 2026: every robot-table contact is forbidden. The jaw meshes sit below the
+# pads at every reachable hand angle, so a pad-only table permission could never apply alone.
+SCENE_NORMAL, JAW_UTENSIL, VIOLATION = "scene_normal", "jaw_utensil", "violation"
 
 
 @dataclass(frozen=True)
 class ContactVerdict:
-    kind: str               # SCENE_NORMAL, JAW_UTENSIL, JAW_TABLE or VIOLATION
+    kind: str               # SCENE_NORMAL, JAW_UTENSIL or VIOLATION
     labels: tuple            # failure labels; non-empty only for VIOLATION
     geoms: tuple             # (name1, name2)
     force: float             # contact normal force, N
-    jaw: str | None = None  # "fixed" or "moving" for JAW_UTENSIL / JAW_TABLE
+    jaw: str | None = None  # "fixed" or "moving" for JAW_UTENSIL
 
 
 def geom_name(model, g: int) -> str:
@@ -38,7 +40,8 @@ class ContactClassifier:
         self.model, self.named = model, named
         self.spare = next(u for u in UTENSILS if u != named)
         self.grasp_arm = config["grasp_arm"]
-        self.jaw_limit = config["jaw_table_force_limit_n"]
+        if "jaw_table_force_limit_n" in config:
+            raise ValueError("jaw_table_force_limit_n was removed: every robot-table contact is forbidden")
         self.severe_limit = config["severe_force_limit_n"]
         self.arm_of = []
         for g in range(model.ngeom):
@@ -49,8 +52,8 @@ class ContactClassifier:
             for name in names:
                 self.jaw[self._geom(f"{self.grasp_arm}/{name}")] = side
         # Jaw meshes that carry real grip load (grip probe 22 Sep: geom_104 7-8 N, geom_93 up to
-        # ~10 N). Owner decision 23 Sep: they may support the NAMED utensil only; unlike the pads
-        # in jaw_grasp_geoms they get no table permission. Selected by body + mesh name, never
+        # ~10 N). Owner decision 23 Sep: they may support the NAMED utensil only, like the pads
+        # in jaw_grasp_geoms (no robot shape may touch the table). Selected by body + mesh name, never
         # by compiled geom id.
         self.utensil_only = {}
         for side, selectors in config.get("jaw_utensil_only_meshes", {}).items():
@@ -113,11 +116,6 @@ class ContactClassifier:
                 kind, jaw = JAW_UTENSIL, side
             elif robot in self.utensil_only and role == self.named:
                 kind, jaw = JAW_UTENSIL, self.utensil_only[robot]
-            elif side is not None and role == "table":
-                kind, jaw = JAW_TABLE, side
-                if self.jaw_limit is not None and force > self.jaw_limit:
-                    kind, jaw = VIOLATION, None
-                    labels.append("FORBIDDEN_CONTACT")
             else:
                 labels.append("FORBIDDEN_CONTACT")
         if (a1 is not None or a2 is not None) and self.severe_limit is not None and force > self.severe_limit:

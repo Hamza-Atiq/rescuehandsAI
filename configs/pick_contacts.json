@@ -18,7 +18,6 @@
     "spoon": ["spoon_handle", "spoon_bowl"]
   },
   "decorative_geoms": ["mat", "cup_zone", "utensil_zone", "plate_rim", "cup_top"],
-  "jaw_table_force_limit_n": null,
   "severe_force_limit_n": null,
   "force_limits_frozen": false
 }
