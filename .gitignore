@@ -33,3 +33,7 @@ id_rsa*
 *.log
 kernel.errors.txt
 *.done
+
+# audit and review reports stay local
+docs/research/
+scripts/review_*.py

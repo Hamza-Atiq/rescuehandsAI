@@ -151,7 +151,6 @@ python training/kaggle_pipeline.py --hf-user <you> --stage export
 | `scripts/` | `evaluate.py`, `benchmark_intel.py`, `deploy_learned.sh`, `render_showcase.py`, `export_openvino.py` |
 | `results/` | Committed evidence behind every number |
 | `docs/submission/` | Write-up, slides, cover |
-| `docs/research/` | Independent audits and how they were resolved |
 
 ## License
 
