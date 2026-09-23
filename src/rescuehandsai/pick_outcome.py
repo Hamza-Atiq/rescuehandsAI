@@ -3,7 +3,7 @@
 Failures latch; immediate violations are recorded when they happen, unmet goals at the
 deadline. The judge never sees invalid-run labels (spec §6)."""
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
 from types import SimpleNamespace
 
@@ -62,6 +62,10 @@ class PickOutcome:
     cup_max_shift_m: float
     cup_max_tilt_deg: float
     longest_eligible_streak: int
+    # Plan 2 Task 3: the numbers the hold rule compares, reported instead of discarded.
+    hold_measurements: dict | None = None        # window that completed the hold, else best_window
+    best_window_measurements: dict | None = None  # most-moved full window seen (near-miss evidence)
+    hold_trace: list = field(default_factory=list)
 
 
 def _yaw(rotation) -> float:
@@ -82,7 +86,8 @@ def _tilt_deg(rotation) -> float:
 
 
 class PickJudge:
-    def __init__(self, named: str, spare: str, rules: dict, steps: StepCounts, table_center, table_half):
+    def __init__(self, named: str, spare: str, rules: dict, steps: StepCounts, table_center, table_half, *,
+                 keep_trace: bool = False):
         self.named, self.spare, self.rules, self.steps = named, spare, rules, steps
         self.table_center, self.table_half = table_center, table_half
         self.start = None
@@ -95,6 +100,10 @@ class PickJudge:
         self.lift_step = {named: None, spare: None}
         self.max_lift = {named: 0.0, spare: 0.0}
         self.spare_shift = self.spare_yaw = self.cup_shift = self.cup_tilt = 0.0
+        self.keep_trace = keep_trace
+        self.trace = []
+        self.best_window = None   # measurements of the most-moved full window seen
+        self.hold_window = None   # measurements of the window that completed the hold
 
     @property
     def succeeded(self) -> bool:
@@ -167,12 +176,49 @@ class PickJudge:
             self._window.clear()
             self._streak = 0
         self.longest_streak = max(self.longest_streak, self._streak)
+        measured = self.window_measurements()
+        if measured is not None and (self.best_window is None
+                                     or measured["max_shift_m"] > self.best_window["max_shift_m"]):
+            self.best_window = measured
+        if self.keep_trace:
+            last = self._window[-1] if self._window else None
+            self.trace.append({"physics_step": f.physics_step, "control_step": f.control_step,
+                               "eligible": last is not None,
+                               "both_jaws": bool(last[0]) if last is not None else False,
+                               "rel_pos": [float(x) for x in last[1]] if last is not None else None,
+                               "rel_rot": [float(x) for x in np.asarray(last[2]).ravel()] if last is not None
+                               else None,
+                               "speed_mps": float(f.linear_speed[self.named]),
+                               "angular_speed_rps": float(f.angular_speed[self.named]),
+                               "lift_m": named_lift})
         if len(self._window) == self.steps.hold and self._window_ok():
             if self.hold_ok_at is None:
                 self.hold_ok_at = (f.physics_step, f.control_step)
+                self.hold_window = measured
             if not self.failures:
                 self.success_at = (f.physics_step, f.control_step)
         return [label for label in new if label in SEVERE]
+
+    def window_measurements(self) -> dict | None:
+        """The numbers _window_ok() compares against the thresholds, reported rather than discarded.
+
+        None while the window is not full (zeros would look like a perfect hold that never happened)."""
+        w = list(self._window)
+        if len(w) < self.steps.hold:
+            return None
+        both = [entry[0] for entry in w]
+        gap = longest = 0
+        for b in both:
+            gap = 0 if b else gap + 1
+            longest = max(longest, gap)
+        p0, r0 = w[0][1], w[0][2]
+        final = w[-self.steps.final_speed:]
+        return {"both_jaw_fraction": sum(both) / len(w),
+                "longest_single_jaw_gap_steps": longest,
+                "max_shift_m": max(float(np.linalg.norm(p - p0)) for _, p, _, _, _ in w),
+                "max_turn_deg": max(_rotation_deg(r0, rot) for _, _, rot, _, _ in w),
+                "max_speed_mps": max(float(v) for *_, v, _ in final),
+                "max_angular_speed_rps": max(float(spin) for *_, spin in final)}
 
     def _window_ok(self) -> bool:
         r, w = self.rules, list(self._window)
@@ -235,4 +281,6 @@ class PickJudge:
             success_control_step=self.success_at[1] if self.success_at else None,
             max_lift_m=dict(self.max_lift), spare_max_shift_m=self.spare_shift, spare_max_yaw_deg=self.spare_yaw,
             cup_max_shift_m=self.cup_shift, cup_max_tilt_deg=self.cup_tilt,
-            longest_eligible_streak=self.longest_streak)
+            longest_eligible_streak=self.longest_streak,
+            hold_measurements=self.hold_window if self.hold_ok_at is not None else self.best_window,
+            best_window_measurements=self.best_window, hold_trace=list(self.trace))
