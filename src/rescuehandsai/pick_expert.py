@@ -5,7 +5,7 @@
    along the whole commanded path (approach, reach, jaw closing, lift), and must keep
    1 mm above the table. The full-task expert aims the fingertip point 1.5 mm up and
    so drives the fixed-jaw mesh about 4.5 mm into the table
-   (docs/research/2026-09-22-collision-inspection/FINDINGS.md).
+   (collision inspection, 22 Sep 2026).
 2. Left-arm staging is blocked with a named error: the milestone forbids left-arm
    object contact (spec section 5).
 

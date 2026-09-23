@@ -2,7 +2,7 @@
 
 The full-task expert checks one point (the gripperframe site) against the table. The
 jaw meshes reach several millimetres past that point, so a pose can look clear and
-still sit inside the table (docs/research/2026-09-22-collision-inspection/FINDINGS.md).
+still sit inside the table (collision inspection, 22 Sep 2026).
 This checker looks at every collidable shape of the hand. It uses its own MjData and
 kinematics only: it never steps physics and never changes the live simulation.
 

@@ -1,7 +1,7 @@
 """SPIKE (throwaway evidence): can pretrained SmolVLA export to OpenVINO and run
 on this Intel CPU/iGPU through Physical AI Studio? Run with .venv-pai.
 
-Not a benchmark of our trained policy. Findings go to docs/research.
+Not a benchmark of our trained policy.
 """
 import json
 import platform
