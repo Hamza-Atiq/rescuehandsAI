@@ -6,7 +6,7 @@ import mujoco
 import numpy as np
 
 from rescuehandsai.contracts import BimanualAction
-from rescuehandsai.pick_config import load_contacts
+from rescuehandsai.pick_config import PICK_PHYSICS_VERSION, load_contacts
 from rescuehandsai.pick_contacts import (JAW_TABLE, JAW_UTENSIL, SCENE_NORMAL, VIOLATION, ContactClassifier,
                                          collides, geom_name)
 from rescuehandsai.sim import MujocoSimulation
@@ -45,7 +45,7 @@ DEEPER = np.array([0.0, 0.0, -0.003])
 class ContactClassifierTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.sim = MujocoSimulation(physics_version=2)
+        cls.sim = MujocoSimulation(physics_version=PICK_PHYSICS_VERSION)
         cls.config = load_contacts()
 
     @classmethod

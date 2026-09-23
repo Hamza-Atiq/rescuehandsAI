@@ -5,7 +5,7 @@ import math
 import numpy as np
 
 from .contracts import BimanualAction
-from .pick_config import load_rules
+from .pick_config import PICK_PHYSICS_VERSION, load_rules
 from .scene import SCENE_ITEMS, SceneParams, sample_params
 
 # cell -> (named utensil, (utensil in slot 0, utensil in slot 1))
@@ -43,7 +43,7 @@ class PickTask:
     spare: str
     template: str
     instruction: str
-    physics_version: int = 2
+    physics_version: int = PICK_PHYSICS_VERSION
 
 
 def named_slot(cell: str) -> int:
@@ -81,7 +81,7 @@ def template_text(template_id: str) -> str:
     return HELD_BACK_TEMPLATES[template_id]
 
 
-def make_pick_task(seed: int, cell: str, template: str, physics_version: int = 2) -> PickTask:
+def make_pick_task(seed: int, cell: str, template: str, physics_version: int = PICK_PHYSICS_VERSION) -> PickTask:
     named, _ = CELLS[cell]
     spare = next(item for item in CELLS[cell][1] if item != named)
     return PickTask(seed, cell, named, spare, template, template_text(template).format(u=named), physics_version)
@@ -100,7 +100,7 @@ class StartCheck:
     reasons: tuple
 
 
-def check_start(seed: int, cell: str, *, physics_version: int = 2, rules: dict | None = None, edit=None) -> StartCheck:
+def check_start(seed: int, cell: str, *, physics_version: int = PICK_PHYSICS_VERSION, rules: dict | None = None, edit=None) -> StartCheck:
     """Frozen start-validity rules on a separate simulation; the arms hold their home targets.
 
     `edit` (tests only) changes the cell's SceneParams before the scene is built."""

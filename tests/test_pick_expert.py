@@ -5,7 +5,7 @@ from rescuehandsai.expert import PlanningError, ScriptedExpert
 from rescuehandsai.motion import Move
 from rescuehandsai.pick_cells import cell_params, make_pick_task
 from rescuehandsai.pick_clearance import Clearance, ClearanceChecker
-from rescuehandsai.pick_config import load_rules
+from rescuehandsai.pick_config import PICK_PHYSICS_VERSION, load_rules
 from rescuehandsai.pick_expert import (MIN_TABLE_CLEARANCE_M, NoClearGraspError, PickExpert,
                                        StagingBlockedError)
 from rescuehandsai.pick_runner import PickEpisodeRunner
@@ -63,7 +63,7 @@ def first_labels(expert, limit=6, stop_at=None):
 class PickExpertPlanningTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.sim = MujocoSimulation(physics_version=2)
+        cls.sim = MujocoSimulation(physics_version=PICK_PHYSICS_VERSION)
 
     @classmethod
     def tearDownClass(cls):
@@ -134,7 +134,7 @@ class PickExpertPlanningTests(unittest.TestCase):
 class PickTeacherUsesPickExpertTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.sim = MujocoSimulation(physics_version=2)
+        cls.sim = MujocoSimulation(physics_version=PICK_PHYSICS_VERSION)
         cls.rules = load_rules()
 
     @classmethod

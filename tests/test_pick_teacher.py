@@ -1,7 +1,7 @@
 import unittest
 
 from rescuehandsai.pick_cells import make_pick_task
-from rescuehandsai.pick_config import load_rules
+from rescuehandsai.pick_config import PICK_PHYSICS_VERSION, load_rules
 from rescuehandsai.pick_runner import PickEpisodeRunner
 from rescuehandsai.pick_teacher import PickTeacher
 from rescuehandsai.sim import MujocoSimulation
@@ -32,7 +32,7 @@ class TeacherProtocolTests(unittest.TestCase):
 class TeacherPickTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.sim = MujocoSimulation(physics_version=2)
+        cls.sim = MujocoSimulation(physics_version=PICK_PHYSICS_VERSION)
         cls.rules = load_rules()
 
     @classmethod

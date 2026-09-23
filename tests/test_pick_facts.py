@@ -4,7 +4,7 @@ import mujoco
 import numpy as np
 
 from rescuehandsai.contracts import BimanualAction
-from rescuehandsai.pick_config import load_contacts
+from rescuehandsai.pick_config import PICK_PHYSICS_VERSION, load_contacts
 from rescuehandsai.pick_contacts import ContactClassifier
 from rescuehandsai.pick_facts import FactReader, SimulatorFailure
 from rescuehandsai.sim import MujocoSimulation
@@ -13,7 +13,7 @@ from rescuehandsai.sim import MujocoSimulation
 class FactReaderTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.sim = MujocoSimulation(physics_version=2)
+        cls.sim = MujocoSimulation(physics_version=PICK_PHYSICS_VERSION)
 
     @classmethod
     def tearDownClass(cls):

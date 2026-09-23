@@ -5,6 +5,7 @@ import unittest
 
 import numpy as np
 
+from rescuehandsai.pick_config import PICK_PHYSICS_VERSION
 from rescuehandsai.pick_cells import (CELLS, HELD_BACK_TEMPLATES, TRAIN_TEMPLATES, assign_templates, cell_params,
                                       check_scene, check_start, make_pick_task, named_slot, slot_jitter)
 from rescuehandsai.scene import load_config, sample_params
@@ -85,7 +86,7 @@ class StartCheckTests(unittest.TestCase):
         self.assertIn("off_table:fork", result.reasons)
 
     def test_check_runs_on_its_own_copy(self):
-        sim = MujocoSimulation(physics_version=2)
+        sim = MujocoSimulation(physics_version=PICK_PHYSICS_VERSION)
         try:
             sim.reset(5)
             qpos, time = sim.data.qpos.copy(), float(sim.data.time)

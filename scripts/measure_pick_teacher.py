@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from rescuehandsai.pick_cells import CELLS, make_pick_task  # noqa: E402
-from rescuehandsai.pick_config import load_rules  # noqa: E402
+from rescuehandsai.pick_config import PICK_PHYSICS_VERSION, load_rules  # noqa: E402
 from rescuehandsai.pick_records import InvalidRun  # noqa: E402
 from rescuehandsai.pick_runner import PickEpisodeRunner  # noqa: E402
 from rescuehandsai.pick_teacher import PickTeacher  # noqa: E402
@@ -32,7 +32,7 @@ SEEDS = range(3100000, 3100004)
 SAMPLED = ("utensil_squeeze", "utensil_lift", "hold")
 
 
-def run_one(sim, seed, cell, physics_version=2):
+def run_one(sim, seed, cell, physics_version=PICK_PHYSICS_VERSION):
     task = make_pick_task(seed, cell, "T1", physics_version=physics_version)
     teacher = PickTeacher()
     tally, samples, state = TableContactTally(), [], {}
@@ -145,7 +145,7 @@ def summary(episodes):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--physics-version", type=int, choices=(2, 3), default=2)
+    parser.add_argument("--physics-version", type=int, choices=(2, 3), default=PICK_PHYSICS_VERSION)
     args = parser.parse_args()
     sim = MujocoSimulation(physics_version=args.physics_version)
     try:

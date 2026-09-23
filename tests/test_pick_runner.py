@@ -5,7 +5,7 @@ import mujoco
 
 from rescuehandsai.contracts import BimanualAction
 from rescuehandsai.pick_cells import make_pick_task
-from rescuehandsai.pick_config import load_rules
+from rescuehandsai.pick_config import PICK_PHYSICS_VERSION, load_rules
 from rescuehandsai.pick_outcome import PickJudge
 from rescuehandsai.pick_records import InvalidRun
 from rescuehandsai.pick_runner import PickEpisodeRunner
@@ -99,7 +99,7 @@ class SevereAtFour(PickJudge):
 class PickRunnerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.sim = MujocoSimulation(physics_version=2)
+        cls.sim = MujocoSimulation(physics_version=PICK_PHYSICS_VERSION)
         cls.rules = dict(load_rules(), deadline_control_steps=5)
         cls.task = make_pick_task(21, "F-B", "T1")  # a test seed outside every data/test block
 

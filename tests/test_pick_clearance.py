@@ -3,6 +3,7 @@ import unittest
 import mujoco
 import numpy as np
 
+from rescuehandsai.pick_config import PICK_PHYSICS_VERSION
 from rescuehandsai.expert import GRASP_DEPTH, OPEN, RIGHT_SIGN, TABLE_CLEARANCE, UTENSIL_MARGIN, ScriptedExpert
 from rescuehandsai.pick_cells import cell_params, make_pick_task
 from rescuehandsai.pick_clearance import MAX_DIP_BOUND_M, Clearance, ClearanceChecker, _ancestor_offset
@@ -73,7 +74,7 @@ def _exact_farthest_point_distance(checker, model, data, g: int, anchor: np.ndar
 class ClearanceCheckerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.sim = MujocoSimulation(physics_version=2)
+        cls.sim = MujocoSimulation(physics_version=PICK_PHYSICS_VERSION)
 
     @classmethod
     def tearDownClass(cls):

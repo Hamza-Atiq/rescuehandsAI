@@ -8,6 +8,9 @@ from .scene import ROOT
 
 RULES_PATH = ROOT / "configs" / "pick_rules.json"
 CONTACTS_PATH = ROOT / "configs" / "pick_contacts.json"
+# Physics used by the pick milestone (owner decision 23 Sep: v3 = v2 + NoSlip, for development;
+# not a final validated physics model). configs/pick_rules.json must name the same version.
+PICK_PHYSICS_VERSION = 3
 
 
 def load_rules(path=None) -> dict:
