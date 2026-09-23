@@ -2,6 +2,10 @@
 
 Status: design approved section by section by the project owner on 2026-09-17.
 This file is the written spec for owner review before implementation.
+Amended 2026-09-23 by owner decision (evidence: grip probe and v3 measurements of
+22–23 Sep): the pick milestone runs physics version 3 (§4, "Version 3"), two jaw
+meshes may support the named utensil only (§5), and the pick teacher asks for a
+6 cm lift while the 5 cm success bar is unchanged (§7).
 AGENTS.md and `2026-09-15-dinner-table-design.md` still apply; where this file
 is more specific, it wins for this milestone.
 
@@ -33,7 +37,8 @@ keeps its pickup skill.
 
 1. Run validity and separate invalid-run labels (§6).
 2. Physics version 2: item friction governs grasps, proven by a slip test, with a
-   scene/config hash (§4).
+   scene/config hash (§4). Amended 23 Sep: the pick milestone runs version 3
+   (version 2 plus NoSlip; §4).
 3. Contact facts checked at every physics step, with a named contact table (§5).
 4. Scene cells (tray-order swap) and frozen start-validity checks (§3).
 5. A pick task and `pick_outcome` with the success rules (§5).
@@ -62,7 +67,9 @@ must keep working unchanged.
 (`evaluate.py`, `generate_dataset.py`, `generate_recovery_dataset.py`, the Kaggle
 pipeline's existing modes, showcase rendering) keeps `physics_version = 1` by
 default and builds a byte-identical world XML. Only the new pick-task commands use
-`physics_version = 2`, and they pass it explicitly. A regression check (§12)
+the pick physics version (`physics_version = 2` until 23 Sep, `3` since; one
+constant, `PICK_PHYSICS_VERSION`, drives the rules file, pick tasks and start
+checks), and they pass it explicitly. A regression check (§12)
 proves version 1 is unchanged.
 
 ## 3. Scenes and the four cells
@@ -136,6 +143,18 @@ friction wins over the utensil's sampled friction in every jaw contact.
   check applies to **datasets and evaluations**, not to initial model weights: an
   old checkpoint may be used as a training starting point (§9).
 
+### Version 3 (owner decision 2026-09-23)
+
+Version 3 = version 2 plus MuJoCo NoSlip (`noslip_iterations = 3` in the world
+option). Nothing else in the world XML differs; versions 1 and 2 are unchanged and
+tests check this. Reason: under version 2 the utensil crept out of a closed grip
+(MuJoCo soft-contact slip, 10–73 mm in the hand on the 16 development
+configurations; 11 of 16 finished below 5 mm rise). Under version 3 the same 16
+configurations kept the utensil (0 of 16 below 5 mm rise at the end). This is a
+development choice for the pick milestone, not a validated final physics model.
+Every record stores `physics_version = 3` and the hashes above. Older version-2
+records keep their own hashes; they are never rewritten to match new code.
+
 ## 5. Contacts and success rules
 
 ### Time steps
@@ -186,6 +205,27 @@ during teacher grasps. If a shape outside the list carries real grasp contact
 (for example a jaw mesh), the list changes only by an owner-approved spec edit
 naming that shape and the evidence.
 
+#### Utensil-only jaw meshes (owner-approved edit, 2026-09-23)
+
+Two unnamed right-hand meshes carry real grasp load and count as jaw contact
+**on the named utensil only**:
+
+- fixed jaw: the mesh `wrist_roll_follower_so101_gripper_part0_v1` in
+  `right_arm/gripper` (compiled as `geom_93`);
+- moving jaw: the mesh `moving_jaw_so101_gripper_part1_v1` in
+  `right_arm/moving_jaw_so101_v1` (compiled as `geom_104`).
+
+Evidence: grip probe 22 Sep — `geom_104` carried about 7–8 N from jaw closing to
+the end in every probed run and touched the named handle in all 16 development
+configurations; `geom_93` carried up to about 10 N in some runs and touched the
+handle in 12 of 16 (version-3 measurement). They are selected in
+`configs/pick_contacts.json` (`jaw_utensil_only_meshes`) by body and mesh name,
+never by compiled geom number. Unlike the listed grasp shapes they have **no
+table permission**: touching the table, plate, cup, spare utensil, or any contact
+by the left-arm copies stays forbidden. All other shapes named "not jaw contact"
+above, including the moving jaw's other mesh (`moving_jaw_so101_gripper_part0_v1`),
+remain forbidden.
+
 #### Contact classes
 
 1. **Allowed structural robot contacts.** MuJoCo's built-in filter already skips
@@ -200,7 +240,8 @@ naming that shape and the evidence.
    Allowed at the start and during the episode; judged only by the movement rules
    and by the stricter support rule during the hold.
 3. **Allowed task contacts:** a right-jaw grasp shape with the named utensil; a
-   right-jaw grasp shape with the table below the force limit.
+   utensil-only jaw mesh with the named utensil; a right-jaw grasp shape (never a
+   utensil-only jaw mesh) with the table below the force limit.
 4. **Forbidden contacts:** every other contact that involves a robot shape,
    including:
    - any robot shape touching the spare utensil;
@@ -208,7 +249,9 @@ naming that shape and the evidence.
    - any robot shape touching the plate or `cup_body`;
    - any right-arm shape that is not a jaw grasp shape touching the table or the
      named utensil (for example the housing box or a jaw mesh — recorded as
-     `FORBIDDEN_CONTACT` until the list is changed as described above);
+     `FORBIDDEN_CONTACT` until the list is changed as described above), except a
+     utensil-only jaw mesh on the named utensil;
+   - a utensil-only jaw mesh touching the table, at any force;
    - a jaw grasp shape with the table above the force limit;
    - arm–arm contact;
    - any pair not listed in the file (also flagged `UNKNOWN_CONTACT_PAIR` for
@@ -235,9 +278,11 @@ become successful.
 2. **A real, stable hold.** A hold window of `hold_s` seconds in which, at every
    physics step:
    - the named utensil is at least 5 cm above its start height;
-   - its only contacts are right-jaw grasp shapes (no table, plate, cup, spare,
-     gripper housing, jaw mesh, other robot shape or left-arm support);
-   - at least one jaw (fixed or moving) touches it through a grasp shape, and
+   - its only contacts are right-jaw grasp shapes or the two utensil-only jaw
+     meshes (no table, plate, cup, spare, gripper housing, other jaw mesh, other
+     robot shape or left-arm support);
+   - at least one jaw (fixed or moving) touches it through a grasp shape or its
+     utensil-only mesh, and
      both jaws together touch it on at
      least 80% of the window's physics steps, with no single-jaw gap longer than
      a gap limit.
@@ -333,6 +378,10 @@ contact forces per pair, and time to hold.
 
 - The teacher is the existing IK-based expert restricted to: approach the named
   utensil, grasp, lift, hold. IK is used only inside the teacher.
+- Lift command (owner decision 2026-09-23): the teacher asks for a 6 cm lift,
+  because under version 3 the utensil loses 1–3 mm during the lift move and a 5 cm
+  request ended 0.1–2.4 mm short. The 5 cm success bar and every hold rule are
+  unchanged; the lift leg is clearance- and reach-checked at 6 cm.
 - It must pass both slots and satisfy the force limit and contact table.
 - **Gate:** 25 dev scenes × 4 cells = 100 episodes. Pass if ≥ 99/100 overall and
   each cell ≥ 24/25. Also reported: scenes passing all four cells, failed teacher
@@ -494,7 +543,7 @@ The training manifest records the init checkpoint ID and its Hub revision hash.
 
 ## 10. Where each step runs
 
-1. **Laptop:** physics v2 and slip test, force measurements, contact-table check,
+1. **Laptop:** physics v2/v3 and slip test, force measurements, contact-table check,
    teacher gate, and a timed run of 4 complete episodes (including model load and
    rendering) to replace the 7-hour estimate for the final test. The timing run
    also measures native CPU episode time for the paired comparison.
@@ -594,8 +643,10 @@ scored valid attempt and never overwrites attempt files.
 - **Hold:** item swinging at constant distance fails; slow stable hold passes;
   support by table or other robot part fails.
 - **Contacts:** classification is by shape, not body — a utensil touching the
-  gripper housing box, `fixed_jaw_box1` or a jaw mesh is not jaw contact; only the
-  listed grasp shapes count; MuJoCo-filtered parent/weld pairs produce no contact;
+  gripper housing box, `fixed_jaw_box1` or an unlisted jaw mesh is not jaw contact;
+  only the listed grasp shapes count, plus the two utensil-only jaw meshes on the
+  named utensil (tested in both contact orders, and forbidden on the table, plate,
+  cup, spare and for the left arm); MuJoCo-filtered parent/weld pairs produce no contact;
   any other same-arm contact is a self-collision; normal item–table and
   item–plate contact at start does not fail; unknown pair forbidden and flagged;
   a brief contact between control steps is caught (simulation test); substeps
