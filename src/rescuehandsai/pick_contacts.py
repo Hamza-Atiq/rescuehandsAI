@@ -48,6 +48,17 @@ class ContactClassifier:
         for side, names in config["jaw_grasp_geoms"].items():
             for name in names:
                 self.jaw[self._geom(f"{self.grasp_arm}/{name}")] = side
+        # Jaw meshes that carry real grip load (grip probe 22 Sep: geom_104 7-8 N, geom_93 up to
+        # ~10 N). Owner decision 23 Sep: they may support the NAMED utensil only; unlike the pads
+        # in jaw_grasp_geoms they get no table permission. Selected by body + mesh name, never
+        # by compiled geom id.
+        self.utensil_only = {}
+        for side, selectors in config.get("jaw_utensil_only_meshes", {}).items():
+            for sel in selectors:
+                g = self._mesh_geom(f"{self.grasp_arm}/{sel['body']}", f"{self.grasp_arm}/{sel['mesh']}")
+                if g in self.jaw or self.utensil_only.get(g, side) != side:
+                    raise ValueError(f"{sel} is listed for more than one jaw role")
+                self.utensil_only[g] = side
         self.role = {}
         for role, names in config["scene_geoms"].items():
             for name in names:
@@ -65,6 +76,18 @@ class ContactClassifier:
             return self.model.geom(name).id
         except KeyError as exc:
             raise ValueError(f"contact config names a geom the model does not have: {name}") from exc
+
+    def _mesh_geom(self, body: str, mesh: str) -> int:
+        model = self.model
+        found = [g for g in range(model.ngeom)
+                 if model.geom_type[g] == mujoco.mjtGeom.mjGEOM_MESH
+                 and model.body(int(model.geom_bodyid[g])).name == body
+                 and model.mesh(int(model.geom_dataid[g])).name == mesh]
+        if len(found) != 1:
+            raise ValueError(f"contact config mesh selector {body} / {mesh} matches {len(found)} geoms, not 1")
+        if not collides(model, found[0]):
+            raise ValueError(f"contact config mesh selector {body} / {mesh} names a shape that cannot collide")
+        return found[0]
 
     def classify(self, g1: int, g2: int, force: float) -> ContactVerdict:
         names = (geom_name(self.model, g1), geom_name(self.model, g2))
@@ -88,6 +111,8 @@ class ContactClassifier:
                 labels.append("FORBIDDEN_CONTACT")
             elif side is not None and role == self.named:
                 kind, jaw = JAW_UTENSIL, side
+            elif robot in self.utensil_only and role == self.named:
+                kind, jaw = JAW_UTENSIL, self.utensil_only[robot]
             elif side is not None and role == "table":
                 kind, jaw = JAW_TABLE, side
                 if self.jaw_limit is not None and force > self.jaw_limit:

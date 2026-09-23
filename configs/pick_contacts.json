@@ -6,6 +6,10 @@
     "moving": ["moving_jaw_box2", "moving_jaw_box3",
                "moving_jaw_sph_tip1", "moving_jaw_sph_tip2", "moving_jaw_sph_tip3"]
   },
+  "jaw_utensil_only_meshes": {
+    "fixed": [{"body": "gripper", "mesh": "wrist_roll_follower_so101_gripper_part0_v1"}],
+    "moving": [{"body": "moving_jaw_so101_v1", "mesh": "moving_jaw_so101_gripper_part1_v1"}]
+  },
   "scene_geoms": {
     "table": ["table"],
     "plate": ["plate"],

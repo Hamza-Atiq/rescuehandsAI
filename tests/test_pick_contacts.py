@@ -155,6 +155,83 @@ class ContactClassifierTests(unittest.TestCase):
         move_geom_to(self.sim, box1, self.sim.data.geom_xpos[handle])
         self.assertEqual(self.verdict_for(box1, handle).labels, ("FORBIDDEN_CONTACT",))
 
+    # -- jaw meshes: allowed on the named utensil only (owner decision 23 Sep) ---------
+    def mesh_geom(self, arm, key):
+        """The one collidable geom on `arm` matching a config selector {body, mesh}."""
+        side = "moving" if key == "moving" else "fixed"
+        sel = self.config["jaw_utensil_only_meshes"][side][0]
+        model = self.sim.model
+        found = [g for g in range(model.ngeom)
+                 if model.body(int(model.geom_bodyid[g])).name == f"{arm}/{sel['body']}"
+                 and model.geom_type[g] == mujoco.mjtGeom.mjGEOM_MESH
+                 and model.mesh(int(model.geom_dataid[g])).name == f"{arm}/{sel['mesh']}"]
+        self.assertEqual(len(found), 1, sel)
+        return found[0]
+
+    def test_jaw_mesh_selectors_resolve_to_the_evidenced_shapes(self):
+        # Cross-check against the grip-probe evidence, which named these by compiled id.
+        self.assertEqual(geom_name(self.sim.model, self.mesh_geom("right_arm", "moving")),
+                         "right_arm/moving_jaw_so101_v1/geom_104")
+        self.assertEqual(geom_name(self.sim.model, self.mesh_geom("right_arm", "fixed")),
+                         "right_arm/gripper/geom_93")
+
+    def test_jaw_meshes_support_the_named_utensil_in_both_orders(self):
+        for side in ("fixed", "moving"):
+            mesh = self.mesh_geom("right_arm", side)
+            for part in ("fork_handle", "fork_neck"):
+                for a, b in ((mesh, self.g(part)), (self.g(part), mesh)):
+                    verdict = self.clf.classify(a, b, 5.0)
+                    self.assertEqual((verdict.kind, verdict.jaw, verdict.labels), (JAW_UTENSIL, side, ()))
+
+    def test_moving_jaw_mesh_real_contact_on_the_named_handle(self):
+        mesh, handle = self.mesh_geom("right_arm", "moving"), self.g("fork_handle")
+        move_geom_to(self.sim, mesh, self.sim.data.geom_xpos[handle] + DEEPER)
+        verdict = self.verdict_for(mesh, handle)
+        self.assertEqual((verdict.kind, verdict.jaw, verdict.labels), (JAW_UTENSIL, "moving", ()))
+
+    def test_jaw_meshes_stay_forbidden_everywhere_else(self):
+        for side in ("fixed", "moving"):
+            mesh = self.mesh_geom("right_arm", side)
+            cases = {"table": "FORBIDDEN_CONTACT", "plate": "FORBIDDEN_CONTACT", "cup_body": "FORBIDDEN_CONTACT",
+                     "spoon_handle": "WRONG_ITEM_TOUCHED", "spoon_bowl": "WRONG_ITEM_TOUCHED"}
+            for other, label in cases.items():
+                for a, b in ((mesh, self.g(other)), (self.g(other), mesh)):
+                    verdict = self.clf.classify(a, b, 0.0)
+                    self.assertEqual((verdict.kind, verdict.labels), (VIOLATION, (label,)), (side, other))
+            # the table permission for pads must not leak to the meshes, even under a force limit
+            limited = ContactClassifier(self.sim.model, "fork", dict(self.config, jaw_table_force_limit_n=1e9))
+            self.assertEqual(limited.classify(mesh, self.g("table"), 0.0).labels, ("FORBIDDEN_CONTACT",))
+
+    def test_jaw_mesh_table_contact_is_forbidden_in_a_real_contact(self):
+        mesh = self.mesh_geom("right_arm", "fixed")
+        x, y, _ = self.sim.data.geom_xpos[mesh]
+        move_geom_to(self.sim, mesh, (x, y, -0.002))
+        self.assertEqual(self.verdict_for(mesh, self.g("table")).labels, ("FORBIDDEN_CONTACT",))
+
+    def test_jaw_mesh_permission_follows_the_named_utensil(self):
+        clf = ContactClassifier(self.sim.model, "spoon", self.config)
+        mesh = self.mesh_geom("right_arm", "moving")
+        self.assertEqual(clf.classify(mesh, self.g("spoon_bowl"), 1.0).kind, JAW_UTENSIL)
+        self.assertEqual(clf.classify(mesh, self.g("fork_handle"), 1.0).labels, ("WRONG_ITEM_TOUCHED",))
+
+    def test_left_arm_jaw_meshes_get_no_permission(self):
+        for side in ("fixed", "moving"):
+            mesh = self.mesh_geom("left_arm", side)
+            self.assertEqual(self.clf.classify(mesh, self.g("fork_handle"), 1.0).labels, ("FORBIDDEN_CONTACT",))
+
+    def test_bad_jaw_mesh_selectors_are_rejected(self):
+        for selector in ({"body": "moving_jaw_so101_v1", "mesh": "no_such_mesh"},
+                         # the visual mesh on the same body cannot collide
+                         {"body": "moving_jaw_so101_v1", "mesh": "moving_jaw_so101_v1"}):
+            bad = copy.deepcopy(self.config)
+            bad["jaw_utensil_only_meshes"]["moving"] = [selector]
+            with self.assertRaises(ValueError):
+                ContactClassifier(self.sim.model, "fork", bad)
+        bad = copy.deepcopy(self.config)
+        bad["jaw_utensil_only_meshes"]["fixed"] = bad["jaw_utensil_only_meshes"]["moving"]
+        with self.assertRaises(ValueError):  # one shape cannot be both jaws
+            ContactClassifier(self.sim.model, "fork", bad)
+
     def test_left_arm_touching_anything(self):
         left_pad = self.g("left_arm/fixed_jaw_box5")
         handle = self.g("fork_handle")
