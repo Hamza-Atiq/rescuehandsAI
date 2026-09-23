@@ -59,8 +59,22 @@ class WindowMeasurementTests(unittest.TestCase):
         self._feed(count=2, drift=0.0, both=True, speed=0.0, lifted=False)
         self.assertEqual(len(self.judge.trace), 4)
         self.assertEqual([e["eligible"] for e in self.judge.trace], [True, True, False, False])
-        self.assertIsNone(self.judge.trace[-1]["rel_pos"])
         self.assertEqual(len(self.judge.trace[0]["rel_rot"]), 9)
+
+    def test_ineligible_steps_still_record_pose_and_actual_jaw_contacts(self):
+        # A failed hold must stay explainable: pose and jaw contacts are kept on every step.
+        self._feed(count=1, drift=0.0, both=True, speed=0.0, lifted=False)
+        self._feed(count=1, drift=0.0, both=False, speed=0.0, lifted=False)
+        first, second = self.judge.trace
+        self.assertFalse(first["eligible"])
+        self.assertEqual(len(first["rel_pos"]), 3)
+        self.assertEqual(len(first["rel_rot"]), 9)
+        self.assertTrue(first["both_jaws"])
+        self.assertEqual([c["jaw"] for c in first["jaw_contacts"]], ["fixed", "moving"])
+        self.assertTrue(second["fixed_jaw"])
+        self.assertFalse(second["moving_jaw"])
+        self.assertFalse(second["both_jaws"])
+        self.assertEqual(second["jaw_contacts"][0]["geoms"], ["right_arm/fixed_jaw_box5", "fork_handle"])
 
     def test_the_trace_is_off_by_default(self):
         quiet = PickJudge("fork", "spoon", self.rules, steps(), (0.0, 0.15), (0.6, 0.45))

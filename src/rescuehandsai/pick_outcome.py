@@ -166,9 +166,10 @@ class PickJudge:
             if lift >= r["lift_height_m"] and self.lift_step[item] is None:
                 self.lift_step[item] = f.control_step
         named_lift = float(f.positions[self.named][2] - self.start[self.named][0][2])
+        # Pose in the gripper frame on EVERY step, so a trace of a failed hold still shows the slip.
+        rel_p = f.gripper_rot.T @ (f.positions[self.named] - f.gripper_pos)
+        rel_r = f.gripper_rot.T @ f.rotations[self.named]
         if named_lift >= r["lift_height_m"] and not named_other and (fixed or moving):
-            rel_p = f.gripper_rot.T @ (f.positions[self.named] - f.gripper_pos)
-            rel_r = f.gripper_rot.T @ f.rotations[self.named]
             self._window.append((fixed and moving, rel_p, rel_r,
                                  f.linear_speed[self.named], f.angular_speed[self.named]))
             self._streak += 1
@@ -181,13 +182,17 @@ class PickJudge:
                                      or measured["max_shift_m"] > self.best_window["max_shift_m"]):
             self.best_window = measured
         if self.keep_trace:
-            last = self._window[-1] if self._window else None
+            # Every field is recorded on every step, eligible or not: calibration must be able to
+            # explain the failed holds, not only the windows that qualified.
             self.trace.append({"physics_step": f.physics_step, "control_step": f.control_step,
-                               "eligible": last is not None,
-                               "both_jaws": bool(last[0]) if last is not None else False,
-                               "rel_pos": [float(x) for x in last[1]] if last is not None else None,
-                               "rel_rot": [float(x) for x in np.asarray(last[2]).ravel()] if last is not None
-                               else None,
+                               "eligible": bool(self._window),
+                               "both_jaws": fixed and moving,
+                               "fixed_jaw": fixed, "moving_jaw": moving,
+                               "named_other_contact": named_other,
+                               "jaw_contacts": [{"jaw": v.jaw, "geoms": list(v.geoms), "force_n": v.force}
+                                                for v in f.verdicts if v.kind == JAW_UTENSIL],
+                               "rel_pos": [float(x) for x in rel_p],
+                               "rel_rot": [float(x) for x in np.asarray(rel_r).ravel()],
                                "speed_mps": float(f.linear_speed[self.named]),
                                "angular_speed_rps": float(f.angular_speed[self.named]),
                                "lift_m": named_lift})
