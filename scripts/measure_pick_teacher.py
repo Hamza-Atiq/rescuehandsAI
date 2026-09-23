@@ -105,6 +105,7 @@ def run_one(sim, seed, cell, physics_version=PICK_PHYSICS_VERSION):
         ep = {"valid": True, "success": o["success"], "first_failure": o["first_failure"],
               "failures": [{k: f[k] for k in ("label", "physics_step", "detail")} for f in o["failures"]],
               "picked": o["picked"], "hold_completed": o["hold_completed"],
+              "longest_eligible_streak": o["longest_eligible_streak"],
               "max_lift_m": o["max_lift_m"], "spare_max_shift_m": o["spare_max_shift_m"],
               "cup_max_shift_m": o["cup_max_shift_m"]}
     except InvalidRun as exc:
@@ -146,11 +147,21 @@ def summary(episodes):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--physics-version", type=int, choices=(2, 3), default=PICK_PHYSICS_VERSION)
+    parser.add_argument("--seeds", type=int, nargs="+", default=list(SEEDS),
+                        help="development seeds only (3100000-3100003)")
+    parser.add_argument("--tag", default="", help="added to the file name so earlier results are never overwritten")
     args = parser.parse_args()
+    if not set(args.seeds) <= set(SEEDS):
+        parser.error(f"only development seeds {SEEDS.start}-{SEEDS.stop - 1} are allowed")
+    stem = "pick_teacher_revised" if args.physics_version == 2 else f"pick_teacher_v{args.physics_version}"
+    tag = f"_{args.tag}" if args.tag else ""
+    out = ROOT / f"results/measurements/{stem}{tag}_{date.today():%Y%m%d}.json"
+    if out.exists():
+        raise SystemExit(f"{out} exists; pass a different --tag")
     sim = MujocoSimulation(physics_version=args.physics_version)
     try:
         episodes = []
-        for seed in SEEDS:
+        for seed in args.seeds:
             for cell in CELLS:
                 ep = run_one(sim, seed, cell, args.physics_version)
                 episodes.append(ep)
@@ -160,13 +171,12 @@ def main():
                       "| hand rise:", lc.get("hand_rise_m"), "| slip:", lc.get("max_slip_m"), flush=True)
     finally:
         sim.close()
-    report = {"scope": "4 development scenes x 4 configurations (not 16 independent scenes); diagnostic",
+    report = {"scope": f"{len(args.seeds)} development scene(s) x 4 configurations (not independent scenes); "
+                       "diagnostic",
               "source_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
               "working_tree_status": subprocess.check_output(["git", "status", "--short"], cwd=ROOT,
                                                              text=True).splitlines(),
               "summary": summary(episodes), "episodes": episodes}
-    stem = "pick_teacher_revised" if args.physics_version == 2 else f"pick_teacher_v{args.physics_version}"
-    out = ROOT / f"results/measurements/{stem}_{date.today():%Y%m%d}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=1), encoding="utf-8")
     print(json.dumps(report["summary"], indent=1))
