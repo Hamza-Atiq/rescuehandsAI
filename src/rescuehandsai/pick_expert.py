@@ -26,7 +26,10 @@ GRASP_HEIGHT_STEP_M = 0.0005
 # the handle -- the kinematic sweep kept ~70 % at 9 mm (FINDINGS §4) -- and may slip;
 # measured in Task 3.
 MAX_GRASP_CENTER_Z_M = 0.012
-LIFT_REQUEST_M = 0.05
+# Owner decision 23 Sep: ask for 6 cm. Under v3 the utensil loses 1-3 mm during the lift
+# move, so a 5 cm request ended 0.1-2.4 mm short. The success bar (rules lift_height_m,
+# 5 cm) is unchanged; the lift leg is clearance-checked at this height like before.
+LIFT_REQUEST_M = 0.06
 GRASP_PITCHES = (1.3, 1.4, 1.2, 1.0)
 
 

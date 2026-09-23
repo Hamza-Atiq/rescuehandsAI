@@ -40,7 +40,7 @@ class UtensilContactTally:
 def lift_chain(plan: dict, samples: list, utensil_start_z: float) -> dict:
     """Split a short lift into its causes.
 
-    requested_rise_m: what the teacher asks for (`LIFT_REQUEST_M`, 0.05 m).
+    requested_rise_m: what the teacher asks for (`LIFT_REQUEST_M`, 0.06 m).
     solved_rise_m: `plan["lift_site_z_m"] - plan["reach_site_z_m"]`, what IK actually
         solved -- shows whether IK error explains the shortfall.
     reach_gap_m: hand height at the last `utensil_squeeze` sample minus

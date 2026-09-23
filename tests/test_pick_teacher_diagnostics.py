@@ -1,5 +1,6 @@
 import unittest
 
+from rescuehandsai.pick_expert import LIFT_REQUEST_M
 from rescuehandsai.pick_teacher_diagnostics import TableContactTally, lift_chain
 
 PLAN = {"reach_site_z_m": 0.004, "lift_site_z_m": 0.052}
@@ -16,7 +17,7 @@ class LiftChainTests(unittest.TestCase):
                    s("utensil_lift", 0.050, 0.047, (0.0, 0.0, -0.001)),
                    s("hold", 0.051, 0.040, (0.0, 0.0, -0.008))]
         c = lift_chain(PLAN, samples, utensil_start_z=0.006)
-        self.assertAlmostEqual(c["requested_rise_m"], 0.05)
+        self.assertAlmostEqual(c["requested_rise_m"], LIFT_REQUEST_M)
         self.assertAlmostEqual(c["solved_rise_m"], 0.048)
         self.assertAlmostEqual(c["reach_gap_m"], 0.004)        # stopped 4 mm above plan
         self.assertAlmostEqual(c["hand_rise_m"], 0.043)
@@ -28,6 +29,14 @@ class LiftChainTests(unittest.TestCase):
         c = lift_chain(PLAN, [s("utensil_reach", 0.01, 0.006)], utensil_start_z=0.006)
         for key in ("reach_gap_m", "hand_rise_m", "utensil_rise_in_lift_m", "max_slip_m"):
             self.assertIsNone(c[key], key)
+
+    def test_teacher_asks_for_headroom_above_the_unchanged_success_bar(self):
+        # Owner decision 23 Sep: the pick-only teacher asks for 6 cm because 1-3 mm is lost
+        # during the lift; the 5 cm success bar in the rules stays.
+        from rescuehandsai.pick_config import load_rules
+
+        self.assertAlmostEqual(LIFT_REQUEST_M, 0.06)
+        self.assertAlmostEqual(load_rules()["lift_height_m"], 0.05)
 
 
 class TableContactTallyTests(unittest.TestCase):
